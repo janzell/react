@@ -36,12 +36,11 @@ describe('ReactStrictMode', () => {
         </React.StrictMode>,
         container,
       );
-    }).toWarnDev(
+    }).toErrorDev(
       'Invalid ARIA attribute `ariaTypo`. ' +
         'ARIA attributes follow the pattern aria-* and must be lowercase.\n' +
         '    in div (at **)\n' +
-        '    in Foo (at **)\n' +
-        '    in StrictMode (at **)',
+        '    in Foo (at **)',
     );
   });
 
@@ -56,12 +55,11 @@ describe('ReactStrictMode', () => {
           <Foo />
         </React.StrictMode>,
       );
-    }).toWarnDev(
+    }).toErrorDev(
       'Invalid ARIA attribute `ariaTypo`. ' +
         'ARIA attributes follow the pattern aria-* and must be lowercase.\n' +
         '    in div (at **)\n' +
-        '    in Foo (at **)\n' +
-        '    in StrictMode (at **)',
+        '    in Foo (at **)',
     );
   });
 
@@ -138,6 +136,7 @@ describe('ReactStrictMode', () => {
         'getDerivedStateFromProps',
         'getDerivedStateFromProps',
         'shouldComponentUpdate',
+        'shouldComponentUpdate',
         'render',
         'render',
         'componentDidUpdate',
@@ -165,6 +164,7 @@ describe('ReactStrictMode', () => {
       expect(log).toEqual([
         'getDerivedStateFromProps',
         'getDerivedStateFromProps',
+        'shouldComponentUpdate',
         'shouldComponentUpdate',
       ]);
     } else {
@@ -283,6 +283,7 @@ describe('ReactStrictMode', () => {
         'getDerivedStateFromProps',
         'getDerivedStateFromProps',
         'shouldComponentUpdate',
+        'shouldComponentUpdate',
         'render',
         'render',
         'componentDidUpdate',
@@ -304,6 +305,7 @@ describe('ReactStrictMode', () => {
       expect(log).toEqual([
         'getDerivedStateFromProps',
         'getDerivedStateFromProps',
+        'shouldComponentUpdate',
         'shouldComponentUpdate',
       ]);
     } else {
@@ -360,76 +362,75 @@ describe('Concurrent Mode', () => {
     Scheduler = require('scheduler');
   });
 
-  it.experimental(
-    'should warn about unsafe legacy lifecycle methods anywhere in the tree',
-    () => {
-      class AsyncRoot extends React.Component {
-        UNSAFE_componentWillMount() {}
-        UNSAFE_componentWillUpdate() {}
-        render() {
-          return (
+  // @gate experimental
+  it('should warn about unsafe legacy lifecycle methods anywhere in the tree', () => {
+    class AsyncRoot extends React.Component {
+      UNSAFE_componentWillMount() {}
+      UNSAFE_componentWillUpdate() {}
+      render() {
+        return (
+          <div>
+            <Wrapper>
+              <Foo />
+            </Wrapper>
             <div>
-              <Wrapper>
-                <Foo />
-              </Wrapper>
-              <div>
-                <Bar />
-                <Foo />
-              </div>
+              <Bar />
+              <Foo />
             </div>
-          );
-        }
+          </div>
+        );
       }
-      function Wrapper({children}) {
-        return <div>{children}</div>;
+    }
+    function Wrapper({children}) {
+      return <div>{children}</div>;
+    }
+    class Foo extends React.Component {
+      UNSAFE_componentWillReceiveProps() {}
+      render() {
+        return null;
       }
-      class Foo extends React.Component {
-        UNSAFE_componentWillReceiveProps() {}
-        render() {
-          return null;
-        }
+    }
+    class Bar extends React.Component {
+      UNSAFE_componentWillReceiveProps() {}
+      render() {
+        return null;
       }
-      class Bar extends React.Component {
-        UNSAFE_componentWillReceiveProps() {}
-        render() {
-          return null;
-        }
-      }
+    }
 
-      const container = document.createElement('div');
-      const root = ReactDOM.createRoot(container);
-      root.render(<AsyncRoot />);
-      expect(() => Scheduler.unstable_flushAll()).toWarnDev(
-        [
-          /* eslint-disable max-len */
-          `Warning: Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://fb.me/react-unsafe-component-lifecycles for details.
+    const container = document.createElement('div');
+    const root = ReactDOM.unstable_createRoot(container);
+    root.render(<AsyncRoot />);
+    expect(() => Scheduler.unstable_flushAll()).toErrorDev(
+      [
+        /* eslint-disable max-len */
+        `Warning: Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move code with side effects to componentDidMount, and set initial state in the constructor.
 
 Please update the following components: AsyncRoot`,
-          `Warning: Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://fb.me/react-unsafe-component-lifecycles for details.
+        `Warning: Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
-* If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://fb.me/react-derived-state
+* If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://reactjs.org/link/derived-state
 
 Please update the following components: Bar, Foo`,
-          `Warning: Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://fb.me/react-unsafe-component-lifecycles for details.
+        `Warning: Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 
 Please update the following components: AsyncRoot`,
-          /* eslint-enable max-len */
-        ],
-        {withoutStack: true},
-      );
+        /* eslint-enable max-len */
+      ],
+      {withoutStack: true},
+    );
 
-      // Dedupe
-      root.render(<AsyncRoot />);
-      Scheduler.unstable_flushAll();
-    },
-  );
+    // Dedupe
+    root.render(<AsyncRoot />);
+    Scheduler.unstable_flushAll();
+  });
 
-  it.experimental('should coalesce warnings by lifecycle name', () => {
+  // @gate experimental
+  it('should coalesce warnings by lifecycle name', () => {
     class AsyncRoot extends React.Component {
       UNSAFE_componentWillMount() {}
       UNSAFE_componentWillUpdate() {}
@@ -453,25 +454,25 @@ Please update the following components: AsyncRoot`,
     }
 
     const container = document.createElement('div');
-    const root = ReactDOM.createRoot(container);
+    const root = ReactDOM.unstable_createRoot(container);
     root.render(<AsyncRoot />);
 
     expect(() => {
-      expect(() => Scheduler.unstable_flushAll()).toWarnDev(
+      expect(() => Scheduler.unstable_flushAll()).toErrorDev(
         [
           /* eslint-disable max-len */
-          `Warning: Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://fb.me/react-unsafe-component-lifecycles for details.
+          `Warning: Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move code with side effects to componentDidMount, and set initial state in the constructor.
 
 Please update the following components: AsyncRoot`,
-          `Warning: Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://fb.me/react-unsafe-component-lifecycles for details.
+          `Warning: Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
-* If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://fb.me/react-derived-state
+* If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://reactjs.org/link/derived-state
 
 Please update the following components: Child`,
-          `Warning: Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://fb.me/react-unsafe-component-lifecycles for details.
+          `Warning: Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 
@@ -480,26 +481,26 @@ Please update the following components: AsyncRoot`,
         ],
         {withoutStack: true},
       );
-    }).toLowPriorityWarnDev(
+    }).toWarnDev(
       [
         /* eslint-disable max-len */
-        `Warning: componentWillMount has been renamed, and is not recommended for use. See https://fb.me/react-unsafe-component-lifecycles for details.
+        `Warning: componentWillMount has been renamed, and is not recommended for use. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move code with side effects to componentDidMount, and set initial state in the constructor.
-* Rename componentWillMount to UNSAFE_componentWillMount to suppress this warning in non-strict mode. In React 17.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
+* Rename componentWillMount to UNSAFE_componentWillMount to suppress this warning in non-strict mode. In React 18.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
 
 Please update the following components: Parent`,
-        `Warning: componentWillReceiveProps has been renamed, and is not recommended for use. See https://fb.me/react-unsafe-component-lifecycles for details.
+        `Warning: componentWillReceiveProps has been renamed, and is not recommended for use. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
-* If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://fb.me/react-derived-state
-* Rename componentWillReceiveProps to UNSAFE_componentWillReceiveProps to suppress this warning in non-strict mode. In React 17.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
+* If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://reactjs.org/link/derived-state
+* Rename componentWillReceiveProps to UNSAFE_componentWillReceiveProps to suppress this warning in non-strict mode. In React 18.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
 
 Please update the following components: Parent`,
-        `Warning: componentWillUpdate has been renamed, and is not recommended for use. See https://fb.me/react-unsafe-component-lifecycles for details.
+        `Warning: componentWillUpdate has been renamed, and is not recommended for use. See https://reactjs.org/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
-* Rename componentWillUpdate to UNSAFE_componentWillUpdate to suppress this warning in non-strict mode. In React 17.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
+* Rename componentWillUpdate to UNSAFE_componentWillUpdate to suppress this warning in non-strict mode. In React 18.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
 
 Please update the following components: Parent`,
         /* eslint-enable max-len */
@@ -511,48 +512,50 @@ Please update the following components: Parent`,
     Scheduler.unstable_flushAll();
   });
 
-  it.experimental(
-    'should warn about components not present during the initial render',
-    () => {
-      class AsyncRoot extends React.Component {
-        render() {
-          return this.props.foo ? <Foo /> : <Bar />;
-        }
+  // @gate experimental
+  it('should warn about components not present during the initial render', () => {
+    class AsyncRoot extends React.Component {
+      render() {
+        return this.props.foo ? <Foo /> : <Bar />;
       }
-      class Foo extends React.Component {
-        UNSAFE_componentWillMount() {}
-        render() {
-          return null;
-        }
+    }
+    class Foo extends React.Component {
+      UNSAFE_componentWillMount() {}
+      render() {
+        return null;
       }
-      class Bar extends React.Component {
-        UNSAFE_componentWillMount() {}
-        render() {
-          return null;
-        }
+    }
+    class Bar extends React.Component {
+      UNSAFE_componentWillMount() {}
+      render() {
+        return null;
       }
+    }
 
-      const container = document.createElement('div');
-      const root = ReactDOM.createRoot(container);
-      root.render(<AsyncRoot foo={true} />);
-      expect(() => Scheduler.unstable_flushAll()).toWarnDev(
-        'Using UNSAFE_componentWillMount in strict mode is not recommended',
-        {withoutStack: true},
-      );
+    const container = document.createElement('div');
+    const root = ReactDOM.unstable_createRoot(container);
+    root.render(<AsyncRoot foo={true} />);
+    expect(() =>
+      Scheduler.unstable_flushAll(),
+    ).toErrorDev(
+      'Using UNSAFE_componentWillMount in strict mode is not recommended',
+      {withoutStack: true},
+    );
 
-      root.render(<AsyncRoot foo={false} />);
-      expect(() => Scheduler.unstable_flushAll()).toWarnDev(
-        'Using UNSAFE_componentWillMount in strict mode is not recommended',
-        {withoutStack: true},
-      );
+    root.render(<AsyncRoot foo={false} />);
+    expect(() =>
+      Scheduler.unstable_flushAll(),
+    ).toErrorDev(
+      'Using UNSAFE_componentWillMount in strict mode is not recommended',
+      {withoutStack: true},
+    );
 
-      // Dedupe
-      root.render(<AsyncRoot foo={true} />);
-      Scheduler.unstable_flushAll();
-      root.render(<AsyncRoot foo={false} />);
-      Scheduler.unstable_flushAll();
-    },
-  );
+    // Dedupe
+    root.render(<AsyncRoot foo={true} />);
+    Scheduler.unstable_flushAll();
+    root.render(<AsyncRoot foo={false} />);
+    Scheduler.unstable_flushAll();
+  });
 
   it('should also warn inside of "strict" mode trees', () => {
     const {StrictMode} = React;
@@ -592,7 +595,9 @@ Please update the following components: Parent`,
 
     const container = document.createElement('div');
 
-    expect(() => ReactDOM.render(<SyncRoot />, container)).toWarnDev(
+    expect(() =>
+      ReactDOM.render(<SyncRoot />, container),
+    ).toErrorDev(
       'Using UNSAFE_componentWillReceiveProps in strict mode is not recommended',
       {withoutStack: true},
     );
@@ -743,13 +748,12 @@ describe('string refs', () => {
     const container = document.createElement('div');
     expect(() => {
       ReactDOM.render(<OuterComponent />, container);
-    }).toWarnDev(
+    }).toErrorDev(
       'Warning: A string ref, "somestring", has been found within a strict mode tree. ' +
         'String refs are a source of potential bugs and should be avoided. ' +
         'We recommend using useRef() or createRef() instead. ' +
         'Learn more about using refs safely here: ' +
-        'https://fb.me/react-strict-mode-string-ref\n' +
-        '    in StrictMode (at **)\n' +
+        'https://reactjs.org/link/strict-mode-string-ref\n' +
         '    in OuterComponent (at **)',
     );
 
@@ -785,14 +789,13 @@ describe('string refs', () => {
     const container = document.createElement('div');
     expect(() => {
       ReactDOM.render(<OuterComponent />, container);
-    }).toWarnDev(
+    }).toErrorDev(
       'Warning: A string ref, "somestring", has been found within a strict mode tree. ' +
         'String refs are a source of potential bugs and should be avoided. ' +
         'We recommend using useRef() or createRef() instead. ' +
         'Learn more about using refs safely here: ' +
-        'https://fb.me/react-strict-mode-string-ref\n' +
+        'https://reactjs.org/link/strict-mode-string-ref\n' +
         '    in InnerComponent (at **)\n' +
-        '    in StrictMode (at **)\n' +
         '    in OuterComponent (at **)',
     );
 
@@ -864,15 +867,15 @@ describe('context legacy', () => {
     const container = document.createElement('div');
     expect(() => {
       ReactDOM.render(<Root />, container);
-    }).toWarnDev(
+    }).toErrorDev(
       'Warning: Legacy context API has been detected within a strict-mode tree.' +
         '\n\nThe old API will be supported in all 16.x releases, but applications ' +
         'using it should migrate to the new version.' +
         '\n\nPlease update the following components: ' +
         'FunctionalLegacyContextConsumer, LegacyContextConsumer, LegacyContextProvider' +
         '\n\nLearn more about this warning here: ' +
-        'https://fb.me/react-legacy-context' +
-        '\n    in StrictMode (at **)' +
+        'https://reactjs.org/link/legacy-context' +
+        '\n    in LegacyContextProvider (at **)' +
         '\n    in div (at **)' +
         '\n    in Root (at **)',
     );

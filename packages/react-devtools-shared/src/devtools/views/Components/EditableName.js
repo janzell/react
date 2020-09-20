@@ -7,31 +7,49 @@
  * @flow
  */
 
-import React, {useCallback, useState} from 'react';
+import * as React from 'react';
+import {useCallback, useState} from 'react';
 import AutoSizeInput from './NativeStyleEditor/AutoSizeInput';
 import styles from './EditableName.css';
 
-type OverrideNameFn = (path: Array<string | number>, value: any) => void;
+type Type = 'props' | 'state' | 'context' | 'hooks';
+type OverrideNameFn = (
+  oldName: Array<string | number>,
+  newName: Array<string | number>,
+) => void;
 
 type EditableNameProps = {|
+  allowEmpty?: boolean,
+  allowWhiteSpace?: boolean,
   autoFocus?: boolean,
+  className?: string,
   initialValue?: string,
-  overrideNameFn: OverrideNameFn,
+  overrideName: OverrideNameFn,
+  path: Array<string | number>,
+  type: Type,
 |};
 
 export default function EditableName({
+  allowEmpty = false,
+  allowWhiteSpace = false,
   autoFocus = false,
+  className = '',
   initialValue = '',
-  overrideNameFn,
+  overrideName,
+  path,
+  type,
 }: EditableNameProps) {
   const [editableName, setEditableName] = useState(initialValue);
   const [isValid, setIsValid] = useState(false);
 
   const handleChange = useCallback(
     ({target}) => {
-      const value = target.value.trim();
+      let value = target.value;
+      if (!allowWhiteSpace) {
+        value = value.trim();
+      }
 
-      if (value) {
+      if (allowEmpty || value !== '') {
         setIsValid(true);
       } else {
         setIsValid(false);
@@ -39,7 +57,7 @@ export default function EditableName({
 
       setEditableName(value);
     },
-    [overrideNameFn],
+    [overrideName],
   );
 
   const handleKeyDown = useCallback(
@@ -51,7 +69,11 @@ export default function EditableName({
         case 'Enter':
         case 'Tab':
           if (isValid) {
-            overrideNameFn(editableName);
+            const basePath = path.slice(0, path.length - 1);
+            overrideName(
+              [...basePath, initialValue],
+              [...basePath, editableName],
+            );
           }
           break;
         case 'Escape':
@@ -61,16 +83,16 @@ export default function EditableName({
           break;
       }
     },
-    [editableName, setEditableName, isValid, initialValue, overrideNameFn],
+    [editableName, setEditableName, isValid, initialValue, overrideName],
   );
 
   return (
     <AutoSizeInput
       autoFocus={autoFocus}
-      className={styles.Input}
+      className={[styles.Input, className].join(' ')}
       onChange={handleChange}
       onKeyDown={handleKeyDown}
-      placeholder="new prop"
+      placeholder="new entry"
       type="text"
       value={editableName}
     />

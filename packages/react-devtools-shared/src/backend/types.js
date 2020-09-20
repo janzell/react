@@ -9,7 +9,7 @@
 
 import type {ReactContext} from 'shared/ReactTypes';
 import type {Source} from 'shared/ReactElementType';
-import type {Fiber} from 'react-reconciler/src/ReactFiber';
+import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   ComponentFilter,
   ElementType,
@@ -22,8 +22,36 @@ type BundleType =
   | 1; // DEV
 
 export type WorkTag = number;
-export type SideEffectTag = number;
+export type WorkFlags = number;
 export type ExpirationTime = number;
+
+export type WorkTagMap = {|
+  Block: WorkTag,
+  ClassComponent: WorkTag,
+  ContextConsumer: WorkTag,
+  ContextProvider: WorkTag,
+  CoroutineComponent: WorkTag,
+  CoroutineHandlerPhase: WorkTag,
+  DehydratedSuspenseComponent: WorkTag,
+  ForwardRef: WorkTag,
+  Fragment: WorkTag,
+  FunctionComponent: WorkTag,
+  HostComponent: WorkTag,
+  HostPortal: WorkTag,
+  HostRoot: WorkTag,
+  HostText: WorkTag,
+  IncompleteClassComponent: WorkTag,
+  IndeterminateComponent: WorkTag,
+  LazyComponent: WorkTag,
+  MemoComponent: WorkTag,
+  Mode: WorkTag,
+  OffscreenComponent: WorkTag,
+  Profiler: WorkTag,
+  SimpleMemoComponent: WorkTag,
+  SuspenseComponent: WorkTag,
+  SuspenseListComponent: WorkTag,
+  YieldComponent: WorkTag,
+|};
 
 // TODO: If it's useful for the frontend to know which types of data an Element has
 // (e.g. props, state, context, hooks) then we could add a bitmask field for this
@@ -38,6 +66,12 @@ export type NativeType = Object;
 export type RendererID = number;
 
 type Dispatcher = any;
+export type CurrentDispatcherRef = {|current: null | Dispatcher|};
+
+export type GetDisplayNameForFiberID = (
+  id: number,
+  findNearestUnfilteredAncestor?: boolean,
+) => string | null;
 
 export type GetFiberIDForNative = (
   component: NativeType,
@@ -48,13 +82,14 @@ export type FindNativeNodesForFiberID = (id: number) => ?Array<NativeType>;
 export type ReactProviderType<T> = {
   $$typeof: Symbol | number,
   _context: ReactContext<T>,
+  ...
 };
 
 export type ReactRenderer = {
   findFiberByHostInstance: (hostInstance: NativeType) => ?Fiber,
   version: string,
+  rendererPackageName: string,
   bundleType: BundleType,
-
   // 16.9+
   overrideHookState?: ?(
     fiber: Object,
@@ -62,30 +97,49 @@ export type ReactRenderer = {
     path: Array<string | number>,
     value: any,
   ) => void,
-
+  // 17+
+  overrideHookStateDeletePath?: ?(
+    fiber: Object,
+    id: number,
+    path: Array<string | number>,
+  ) => void,
+  // 17+
+  overrideHookStateRenamePath?: ?(
+    fiber: Object,
+    id: number,
+    oldPath: Array<string | number>,
+    newPath: Array<string | number>,
+  ) => void,
   // 16.7+
   overrideProps?: ?(
     fiber: Object,
     path: Array<string | number>,
     value: any,
   ) => void,
-
+  // 17+
+  overridePropsDeletePath?: ?(
+    fiber: Object,
+    path: Array<string | number>,
+  ) => void,
+  // 17+
+  overridePropsRenamePath?: ?(
+    fiber: Object,
+    oldPath: Array<string | number>,
+    newPath: Array<string | number>,
+  ) => void,
   // 16.9+
   scheduleUpdate?: ?(fiber: Object) => void,
   setSuspenseHandler?: ?(shouldSuspend: (fiber: Object) => boolean) => void,
-
   // Only injected by React v16.8+ in order to support hooks inspection.
-  currentDispatcherRef?: {|current: null | Dispatcher|},
-
+  currentDispatcherRef?: CurrentDispatcherRef,
   // Only injected by React v16.9+ in DEV mode.
   // Enables DevTools to append owners-only component stack to error messages.
   getCurrentFiber?: () => Fiber | null,
-
   // Uniquely identifies React DOM v15.
   ComponentTree?: any,
-
   // Present for React DOM v12 (possibly earlier) through v15.
   Mount?: any,
+  ...
 };
 
 export type ChangeDescription = {|
@@ -154,13 +208,17 @@ export type InspectedElement = {|
 
   displayName: string | null,
 
-  // Does the current renderer support editable hooks?
+  // Does the current renderer support editable hooks and function props?
   canEditHooks: boolean,
-
-  // Does the current renderer support editable function props?
   canEditFunctionProps: boolean,
 
-  // Is this Suspense, and can its value be overriden now?
+  // Does the current renderer support advanced editing interface?
+  canEditHooksAndDeletePaths: boolean,
+  canEditHooksAndRenamePaths: boolean,
+  canEditFunctionPropsDeletePaths: boolean,
+  canEditFunctionPropsRenamePaths: boolean,
+
+  // Is this Suspense, and can its value be overridden now?
   canToggleSuspense: boolean,
 
   // Can view component source location.
@@ -174,14 +232,22 @@ export type InspectedElement = {|
   hooks: Object | null,
   props: Object | null,
   state: Object | null,
+  key: number | string | null,
 
   // List of owners
   owners: Array<Owner> | null,
 
-  // Location of component in source coude.
+  // Location of component in source code.
   source: Source | null,
 
   type: ElementType,
+
+  // Meta information about the root this element belongs to.
+  rootType: string | null,
+
+  // Meta information about the renderer that created this element.
+  rendererPackageName: string | null,
+  rendererVersion: string | null,
 |};
 
 export const InspectElementFullDataType = 'full-data';
@@ -223,12 +289,22 @@ export type InstanceAndStyle = {|
   style: Object | null,
 |};
 
+type Type = 'props' | 'hooks' | 'state' | 'context';
+
 export type RendererInterface = {
   cleanup: () => void,
+  copyElementPath: (id: number, path: Array<string | number>) => void,
+  deletePath: (
+    type: Type,
+    id: number,
+    hookID: ?number,
+    path: Array<string | number>,
+  ) => void,
   findNativeNodesForFiberID: FindNativeNodesForFiberID,
   flushInitialOperations: () => void,
   getBestMatchForTrackedPath: () => PathMatch | null,
   getFiberIDForNative: GetFiberIDForNative,
+  getDisplayNameForFiberID: GetDisplayNameForFiberID,
   getInstanceAndStyle(id: number): InstanceAndStyle,
   getProfilingData(): ProfilingDataBackend,
   getOwnersList: (id: number) => Array<Owner> | null,
@@ -241,28 +317,43 @@ export type RendererInterface = {
   ) => InspectedElementPayload,
   logElementToConsole: (id: number) => void,
   overrideSuspense: (id: number, forceFallback: boolean) => void,
-  prepareViewElementSource: (id: number) => void,
-  renderer: ReactRenderer | null,
-  setInContext: (id: number, path: Array<string | number>, value: any) => void,
-  setInHook: (
+  overrideValueAtPath: (
+    type: Type,
     id: number,
-    index: number,
+    hook: ?number,
     path: Array<string | number>,
     value: any,
   ) => void,
-  setInProps: (id: number, path: Array<string | number>, value: any) => void,
-  setInState: (id: number, path: Array<string | number>, value: any) => void,
+  prepareViewAttributeSource: (
+    id: number,
+    path: Array<string | number>,
+  ) => void,
+  prepareViewElementSource: (id: number) => void,
+  renamePath: (
+    type: Type,
+    id: number,
+    hookID: ?number,
+    oldPath: Array<string | number>,
+    newPath: Array<string | number>,
+  ) => void,
+  renderer: ReactRenderer | null,
   setTraceUpdatesEnabled: (enabled: boolean) => void,
   setTrackedPath: (path: Array<PathFrame> | null) => void,
   startProfiling: (recordChangeDescriptions: boolean) => void,
   stopProfiling: () => void,
+  storeAsGlobal: (
+    id: number,
+    path: Array<string | number>,
+    count: number,
+  ) => void,
   updateComponentFilters: (componentFilters: Array<ComponentFilter>) => void,
+  ...
 };
 
 export type Handler = (data: any) => void;
 
 export type DevToolsHook = {
-  listeners: {[key: string]: Array<Handler>},
+  listeners: {[key: string]: Array<Handler>, ...},
   rendererInterfaces: Map<RendererID, RendererInterface>,
   renderers: Map<RendererID, ReactRenderer>,
 
@@ -289,4 +380,5 @@ export type DevToolsHook = {
     // Added in v16.9 to support Fast Refresh
     didError?: boolean,
   ) => void,
+  ...
 };

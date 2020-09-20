@@ -15,6 +15,7 @@ let React;
 let ReactDOM;
 let ReactDOMServer;
 let ReactTestUtils;
+let act;
 
 function initModules() {
   // Reset warning cache.
@@ -24,6 +25,7 @@ function initModules() {
   ReactDOM = require('react-dom');
   ReactDOMServer = require('react-dom/server');
   ReactTestUtils = require('react-dom/test-utils');
+  act = ReactTestUtils.unstable_concurrentAct;
 
   // Make them available to the helpers.
   return {
@@ -44,11 +46,6 @@ describe('ReactDOMServerSuspense', () => {
     resetModules();
   });
 
-  if (!__EXPERIMENTAL__) {
-    it("empty test so Jest doesn't complain", () => {});
-    return;
-  }
-
   function Text(props) {
     return <div>{props.text}</div>;
   }
@@ -57,6 +54,7 @@ describe('ReactDOMServerSuspense', () => {
     throw new Promise(() => {});
   }
 
+  // @gate experimental || www
   it('should render the children when no promise is thrown', async () => {
     const c = await serverRender(
       <div>
@@ -71,6 +69,7 @@ describe('ReactDOMServerSuspense', () => {
     expect(e.textContent).toBe('Children');
   });
 
+  // @gate experimental || www
   it('should render the fallback when a promise thrown', async () => {
     const c = await serverRender(
       <div>
@@ -85,6 +84,7 @@ describe('ReactDOMServerSuspense', () => {
     expect(e.textContent).toBe('Fallback');
   });
 
+  // @gate experimental || www
   it('should work with nested suspense components', async () => {
     const c = await serverRender(
       <div>
@@ -105,6 +105,7 @@ describe('ReactDOMServerSuspense', () => {
     );
   });
 
+  // @gate experimental
   it('server renders a SuspenseList component and its children', async () => {
     const example = (
       <React.SuspenseList>
@@ -125,7 +126,7 @@ describe('ReactDOMServerSuspense', () => {
     expect(divB.tagName).toBe('DIV');
     expect(divB.textContent).toBe('B');
 
-    ReactTestUtils.act(() => {
+    act(() => {
       const root = ReactDOM.createBlockingRoot(parent, {hydrate: true});
       root.render(example);
     });
@@ -137,33 +138,36 @@ describe('ReactDOMServerSuspense', () => {
     expect(divB).toBe(divB2);
   });
 
-  itThrowsWhenRendering(
-    'a suspending component outside a Suspense node',
-    async render => {
-      await render(
-        <div>
-          <React.Suspense />
-          <AsyncText text="Children" />
-          <React.Suspense />
-        </div>,
-        1,
-      );
-    },
-    'Add a <Suspense fallback=...> component higher in the tree',
-  );
+  // TODO: Remove this in favor of @gate pragma
+  if (__EXPERIMENTAL__) {
+    itThrowsWhenRendering(
+      'a suspending component outside a Suspense node',
+      async render => {
+        await render(
+          <div>
+            <React.Suspense />
+            <AsyncText text="Children" />
+            <React.Suspense />
+          </div>,
+          1,
+        );
+      },
+      'Add a <Suspense fallback=...> component higher in the tree',
+    );
 
-  itThrowsWhenRendering(
-    'a suspending component without a Suspense above',
-    async render => {
-      await render(
-        <div>
-          <AsyncText text="Children" />
-        </div>,
-        1,
-      );
-    },
-    'Add a <Suspense fallback=...> component higher in the tree',
-  );
+    itThrowsWhenRendering(
+      'a suspending component without a Suspense above',
+      async render => {
+        await render(
+          <div>
+            <AsyncText text="Children" />
+          </div>,
+          1,
+        );
+      },
+      'Add a <Suspense fallback=...> component higher in the tree',
+    );
+  }
 
   it('does not get confused by throwing null', () => {
     function Bad() {

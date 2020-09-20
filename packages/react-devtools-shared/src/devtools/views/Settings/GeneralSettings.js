@@ -7,7 +7,8 @@
  * @flow
  */
 
-import React, {useContext} from 'react';
+import * as React from 'react';
+import {useContext} from 'react';
 import {SettingsContext} from './SettingsContext';
 import {StoreContext} from '../context';
 import {CHANGE_LOG_URL} from 'react-devtools-shared/src/constants';
@@ -16,9 +17,7 @@ import styles from './SettingsShared.css';
 
 export default function GeneralSettings(_: {||}) {
   const {
-    appendComponentStack,
     displayDensity,
-    setAppendComponentStack,
     setDisplayDensity,
     setTheme,
     setTraceUpdatesEnabled,
@@ -69,19 +68,6 @@ export default function GeneralSettings(_: {||}) {
           </label>
         </div>
       )}
-
-      <div className={styles.Setting}>
-        <label>
-          <input
-            type="checkbox"
-            checked={appendComponentStack}
-            onChange={({currentTarget}) =>
-              setAppendComponentStack(currentTarget.checked)
-            }
-          />{' '}
-          Append component stacks to console warnings and errors.
-        </label>
-      </div>
 
       <div className={styles.ReleaseNotes}>
         <a

@@ -618,9 +618,15 @@ exports[`Store should show the right display names for special component types 1
   ▾ <App>
       <MyComponent>
       <MyComponent> [ForwardRef]
-      <MyComponent> [Memo]
+    ▾ <Anonymous> [ForwardRef]
+        <MyComponent2>
+      <Custom> [ForwardRef]
+      <MyComponent4> [Memo]
     ▾ <MyComponent> [Memo]
         <MyComponent> [ForwardRef]
     ▾ <Suspense>
-        <MyComponent>
+        <MyComponent5>
+      <Baz> [withFoo][withBar]
+      <Baz> [Memo][withFoo][withBar]
+      <Baz> [ForwardRef][withFoo][withBar]
 `;

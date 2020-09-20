@@ -7,10 +7,7 @@
  * @flow
  */
 
-import {
-  ElementTypeForwardRef,
-  ElementTypeMemo,
-} from 'react-devtools-shared/src/types';
+import JSON5 from 'json5';
 
 import type {Element} from './views/Components/types';
 import type Store from './store';
@@ -30,21 +27,9 @@ export function printElement(element: Element, includeWeight: boolean = false) {
   if (element.hocDisplayNames !== null) {
     hocDisplayNames = [...element.hocDisplayNames];
   }
-  if (element.type === ElementTypeMemo) {
-    if (hocDisplayNames === null) {
-      hocDisplayNames = ['Memo'];
-    } else {
-      hocDisplayNames.push('Memo');
-    }
-  } else if (element.type === ElementTypeForwardRef) {
-    if (hocDisplayNames === null) {
-      hocDisplayNames = ['ForwardRef'];
-    } else {
-      hocDisplayNames.push('ForwardRef');
-    }
-  }
 
-  let hocs = hocDisplayNames === null ? '' : ` [${hocDisplayNames.join('][')}]`;
+  const hocs =
+    hocDisplayNames === null ? '' : ` [${hocDisplayNames.join('][')}]`;
 
   let suffix = '';
   if (includeWeight) {
@@ -90,9 +75,7 @@ export function printStore(store: Store, includeWeight: boolean = false) {
   // Make sure the pretty-printed test align with the Store's reported number of total rows.
   if (rootWeight !== store.numElements) {
     throw Error(
-      `Inconsistent Store state. Individual root weights (${rootWeight}) do not match total weight (${
-        store.numElements
-      })`,
+      `Inconsistent Store state. Individual root weights (${rootWeight}) do not match total weight (${store.numElements})`,
     );
   }
 
@@ -128,7 +111,7 @@ export function smartParse(value: any) {
     case 'undefined':
       return undefined;
     default:
-      return JSON.parse(sanitizeForParse(value));
+      return JSON5.parse(sanitizeForParse(value));
   }
 }
 
