@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -66,7 +66,14 @@ class Surface extends React.Component {
 
     this._surface = Mode.Surface(+width, +height, this._tagRef);
 
-    this._mountNode = createContainer(this._surface, LegacyRoot, false, null);
+    this._mountNode = createContainer(
+      this._surface,
+      LegacyRoot,
+      null,
+      false,
+      false,
+      '',
+    );
     updateContainer(this.props.children, this._mountNode, this);
   }
 
@@ -120,7 +127,7 @@ class Text extends React.Component {
     // ref directly.
     ['height', 'width', 'x', 'y'].forEach(key => {
       Object.defineProperty(this, key, {
-        get: function() {
+        get: function () {
           return this._text ? this._text[key] : undefined;
         },
       });

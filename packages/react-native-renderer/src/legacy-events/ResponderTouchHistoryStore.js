@@ -1,13 +1,11 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
  * @flow
  */
-
-import invariant from 'shared/invariant';
 
 import {isStartish, isMoveish, isEndish} from './ResponderTopLevelEventTypes';
 
@@ -16,7 +14,7 @@ import {isStartish, isMoveish, isEndish} from './ResponderTopLevelEventTypes';
  * should typically only see IDs in the range of 1-20 because IDs get recycled
  * when touches end and start again.
  */
-type TouchRecord = {|
+type TouchRecord = {
   touchActive: boolean,
   startPageX: number,
   startPageY: number,
@@ -27,7 +25,7 @@ type TouchRecord = {|
   previousPageX: number,
   previousPageY: number,
   previousTimeStamp: number,
-|};
+};
 
 const MAX_TOUCH_BANK = 20;
 const touchBank: Array<TouchRecord> = [];
@@ -94,7 +92,10 @@ function resetTouchRecord(touchRecord: TouchRecord, touch: Touch): void {
 }
 
 function getTouchIdentifier({identifier}: Touch): number {
-  invariant(identifier != null, 'Touch object is missing identifier.');
+  if (identifier == null) {
+    throw new Error('Touch object is missing identifier.');
+  }
+
   if (__DEV__) {
     if (identifier > MAX_TOUCH_BANK) {
       console.error(
@@ -184,8 +185,21 @@ function printTouchBank(): string {
   return printed;
 }
 
+let instrumentationCallback: ?(string, TouchEvent) => void;
+
 const ResponderTouchHistoryStore = {
+  /**
+   * Registers a listener which can be used to instrument every touch event.
+   */
+  instrument(callback: (string, TouchEvent) => void): void {
+    instrumentationCallback = callback;
+  },
+
   recordTouchTrack(topLevelType: string, nativeEvent: TouchEvent): void {
+    if (instrumentationCallback != null) {
+      instrumentationCallback(topLevelType, nativeEvent);
+    }
+
     if (isMoveish(topLevelType)) {
       nativeEvent.changedTouches.forEach(recordTouchMove);
     } else if (isStartish(topLevelType)) {

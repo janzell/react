@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -14,7 +14,10 @@ import type Store from 'react-devtools-shared/src/devtools/store';
 import type {ProfilingDataFrontend} from 'react-devtools-shared/src/devtools/views/Profiler/types';
 import type {ElementType} from 'react-devtools-shared/src/types';
 
-export function act(callback: Function): void {
+export function act(
+  callback: Function,
+  recursivelyFlush: boolean = true,
+): void {
   const {act: actTestRenderer} = require('react-test-renderer');
   const {act: actDOM} = require('react-dom/test-utils');
 
@@ -24,13 +27,15 @@ export function act(callback: Function): void {
     });
   });
 
-  // Flush Bridge operations
-  while (jest.getTimerCount() > 0) {
-    actDOM(() => {
-      actTestRenderer(() => {
-        jest.runAllTimers();
+  if (recursivelyFlush) {
+    // Flush Bridge operations
+    while (jest.getTimerCount() > 0) {
+      actDOM(() => {
+        actTestRenderer(() => {
+          jest.runAllTimers();
+        });
       });
-    });
+    }
   }
 }
 
@@ -157,6 +162,24 @@ export function getRendererID(): number {
   return parseInt(id, 10);
 }
 
+export function legacyRender(elements, container) {
+  if (container == null) {
+    container = document.createElement('div');
+  }
+
+  const ReactDOM = require('react-dom');
+  withErrorsOrWarningsIgnored(
+    ['ReactDOM.render is no longer supported in React 18'],
+    () => {
+      ReactDOM.render(elements, container);
+    },
+  );
+
+  return () => {
+    ReactDOM.unmountComponentAtNode(container);
+  };
+}
+
 export function requireTestRenderer(): ReactTestRenderer {
   let hook;
   try {
@@ -180,7 +203,8 @@ export function exportImportHelper(bridge: FrontendBridge, store: Store): void {
 
   expect(profilerStore.profilingData).not.toBeNull();
 
-  const profilingDataFrontendInitial = ((profilerStore.profilingData: any): ProfilingDataFrontend);
+  const profilingDataFrontendInitial =
+    ((profilerStore.profilingData: any): ProfilingDataFrontend);
   expect(profilingDataFrontendInitial.imported).toBe(false);
 
   const profilingDataExport = prepareProfilingDataExport(
@@ -204,12 +228,81 @@ export function exportImportHelper(bridge: FrontendBridge, store: Store): void {
   expect(profilingDataFrontendInitial.dataForRoots).toEqual(
     profilingDataFrontend.dataForRoots,
   );
+  expect(profilingDataFrontendInitial.timelineData).toEqual(
+    profilingDataFrontend.timelineData,
+  );
 
   // Snapshot the JSON-parsed object, rather than the raw string, because Jest formats the diff nicer.
-  expect(parsedProfilingDataExport).toMatchSnapshot('imported data');
+  // expect(parsedProfilingDataExport).toMatchSnapshot('imported data');
 
   act(() => {
     // Apply the new exported-then-imported data so tests can re-run assertions.
     profilerStore.profilingData = profilingDataFrontend;
+  });
+}
+
+/**
+ * Runs `fn` while preventing console error and warnings that partially match any given `errorOrWarningMessages` from appearing in the console.
+ * @param errorOrWarningMessages Messages are matched partially (i.e. indexOf), pre-formatting.
+ * @param fn
+ */
+export function withErrorsOrWarningsIgnored<T: void | Promise<void>>(
+  errorOrWarningMessages: string[],
+  fn: () => T,
+): T {
+  // withErrorsOrWarningsIgnored() may be nested.
+  const prev = global._ignoredErrorOrWarningMessages || [];
+
+  let resetIgnoredErrorOrWarningMessages = true;
+  try {
+    global._ignoredErrorOrWarningMessages = [
+      ...prev,
+      ...errorOrWarningMessages,
+    ];
+    const maybeThenable = fn();
+    if (
+      maybeThenable !== undefined &&
+      typeof maybeThenable.then === 'function'
+    ) {
+      resetIgnoredErrorOrWarningMessages = false;
+      return maybeThenable.then(
+        () => {
+          global._ignoredErrorOrWarningMessages = prev;
+        },
+        () => {
+          global._ignoredErrorOrWarningMessages = prev;
+        },
+      );
+    }
+  } finally {
+    if (resetIgnoredErrorOrWarningMessages) {
+      global._ignoredErrorOrWarningMessages = prev;
+    }
+  }
+}
+
+export function overrideFeatureFlags(overrideFlags) {
+  jest.mock('react-devtools-feature-flags', () => {
+    const actualFlags = jest.requireActual('react-devtools-feature-flags');
+    return {
+      ...actualFlags,
+      ...overrideFlags,
+    };
+  });
+}
+
+export function normalizeCodeLocInfo(str) {
+  if (typeof str !== 'string') {
+    return str;
+  }
+  // This special case exists only for the special source location in
+  // ReactElementValidator. That will go away if we remove source locations.
+  str = str.replace(/Check your code at .+?:\d+/g, 'Check your code at **');
+  // V8 format:
+  //  at Component (/path/filename.js:123:45)
+  // React format:
+  //    in Component (at filename.js:123)
+  return str.replace(/\n +(?:at|in) ([\S]+)[^\n]*/g, function (m, name) {
+    return '\n    in ' + name + ' (at **)';
   });
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -9,29 +9,28 @@
 
 import * as React from 'react';
 import {Fragment, useCallback} from 'react';
-import Tooltip from '@reach/tooltip';
 import Icon from './Icon';
 
 import styles from './TabBar.css';
-import tooltipStyles from './Tooltip.css';
+import Tooltip from './Components/reach-ui/tooltip';
 
 import type {IconType} from './Icon';
 
-type TabInfo = {|
+type TabInfo = {
   icon: IconType,
   id: string,
   label: string,
   title?: string,
-|};
+};
 
-export type Props = {|
+export type Props = {
   currentTab: any,
   disabled?: boolean,
   id: string,
   selectTab: (tabID: any) => void,
-  tabs: Array<TabInfo>,
+  tabs: Array<TabInfo | null>,
   type: 'navigation' | 'profiler' | 'settings',
-|};
+};
 
 export default function TabBar({
   currentTab,
@@ -40,17 +39,18 @@ export default function TabBar({
   selectTab,
   tabs,
   type,
-}: Props) {
-  if (!tabs.some(tab => tab.id === currentTab)) {
-    selectTab(tabs[0].id);
+}: Props): React.Node {
+  if (!tabs.some(tab => tab !== null && tab.id === currentTab)) {
+    const firstTab = ((tabs.find(tab => tab !== null): any): TabInfo);
+    selectTab(firstTab.id);
   }
 
   const onChange = useCallback(
-    ({currentTarget}) => selectTab(currentTarget.value),
+    ({currentTarget}: $FlowFixMe) => selectTab(currentTarget.value),
     [selectTab],
   );
 
-  const handleKeyDown = useCallback(event => {
+  const handleKeyDown = useCallback((event: $FlowFixMe) => {
     switch (event.key) {
       case 'ArrowDown':
       case 'ArrowLeft':
@@ -88,7 +88,13 @@ export default function TabBar({
 
   return (
     <Fragment>
-      {tabs.map(({icon, id, label, title}) => {
+      {tabs.map(tab => {
+        if (tab === null) {
+          return <div key="VRule" className={styles.VRule} />;
+        }
+
+        const {icon, id, label, title} = tab;
+
         let button = (
           <label
             className={[
@@ -96,6 +102,7 @@ export default function TabBar({
               disabled ? styles.TabDisabled : styles.Tab,
               !disabled && currentTab === id ? styles.TabCurrent : '',
             ].join(' ')}
+            data-testname={`TabBarButton-${id}`}
             key={id}
             onKeyDown={handleKeyDown}
             onMouseDown={() => selectTab(id)}>
@@ -120,7 +127,7 @@ export default function TabBar({
 
         if (title) {
           button = (
-            <Tooltip key={id} className={tooltipStyles.Tooltip} label={title}>
+            <Tooltip key={id} label={title}>
               {button}
             </Tooltip>
           );

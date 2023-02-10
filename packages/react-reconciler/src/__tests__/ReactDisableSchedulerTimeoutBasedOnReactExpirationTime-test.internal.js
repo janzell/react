@@ -29,7 +29,7 @@ describe('ReactSuspenseList', () => {
 
   function createAsyncText(text) {
     let resolved = false;
-    const Component = function() {
+    const Component = function () {
       if (!resolved) {
         Scheduler.unstable_yieldValue('Suspend! [' + text + ']');
         throw promise;
@@ -37,7 +37,7 @@ describe('ReactSuspenseList', () => {
       return <Text text={text} />;
     };
     const promise = new Promise(resolve => {
-      Component.resolve = function() {
+      Component.resolve = function () {
         resolved = true;
         return resolve();
       };
@@ -63,7 +63,13 @@ describe('ReactSuspenseList', () => {
     root.render(<App show={false} />);
     expect(Scheduler).toFlushAndYield([]);
 
-    root.render(<App show={true} />);
+    if (gate(flags => flags.enableSyncDefaultUpdates)) {
+      React.startTransition(() => {
+        root.render(<App show={true} />);
+      });
+    } else {
+      root.render(<App show={true} />);
+    }
     expect(Scheduler).toFlushAndYield([
       'Suspend! [A]',
       'Suspend! [B]',

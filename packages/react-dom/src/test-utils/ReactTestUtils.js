@@ -1,8 +1,10 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
+ *
+ * @noflow
  */
 
 import * as React from 'react';
@@ -13,29 +15,31 @@ import {
   ClassComponent,
   FunctionComponent,
   HostComponent,
+  HostHoistable,
+  HostSingleton,
   HostText,
 } from 'react-reconciler/src/ReactWorkTags';
-import {SyntheticEvent} from '../events/SyntheticEvent';
-import invariant from 'shared/invariant';
-import {ELEMENT_NODE} from '../shared/HTMLNodeType';
-import {act} from './ReactTestUtilsPublicAct';
-import {unstable_concurrentAct} from './ReactTestUtilsInternalAct';
+import {SyntheticEvent} from 'react-dom-bindings/src/events/SyntheticEvent';
+import {ELEMENT_NODE} from 'react-dom-bindings/src/shared/HTMLNodeType';
 import {
   rethrowCaughtError,
   invokeGuardedCallbackAndCatchFirstError,
 } from 'shared/ReactErrorUtils';
+import {enableFloat, enableHostSingletons} from 'shared/ReactFeatureFlags';
+import assign from 'shared/assign';
+import isArray from 'shared/isArray';
 
-// Keep in sync with ReactDOM.js, and ReactTestUtilsAct.js:
-const EventInternals =
-  ReactDOM.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Events;
+// Keep in sync with ReactDOM.js:
+const SecretInternals =
+  ReactDOM.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+const EventInternals = SecretInternals.Events;
 const getInstanceFromNode = EventInternals[0];
 const getNodeFromInstance = EventInternals[1];
 const getFiberCurrentPropsFromNode = EventInternals[2];
 const enqueueStateRestore = EventInternals[3];
 const restoreStateIfNeeded = EventInternals[4];
-// const flushPassiveEffects = EventInternals[5];
-// TODO: This is related to `act`, not events. Move to separate key?
-// const IsThisRendererActing = EventInternals[6];
+
+const act = React.unstable_act;
 
 function Event(suffix) {}
 
@@ -60,7 +64,9 @@ function findAllInRenderedFiberTreeInternal(fiber, test) {
       node.tag === HostComponent ||
       node.tag === HostText ||
       node.tag === ClassComponent ||
-      node.tag === FunctionComponent
+      node.tag === FunctionComponent ||
+      (enableFloat ? node.tag === HostHoistable : false) ||
+      (enableHostSingletons ? node.tag === HostSingleton : false)
     ) {
       const publicInst = node.stateNode;
       if (test(publicInst)) {
@@ -96,8 +102,8 @@ function validateClassInstance(inst, methodName) {
     return;
   }
   let received;
-  const stringified = '' + inst;
-  if (Array.isArray(inst)) {
+  const stringified = String(inst);
+  if (isArray(inst)) {
     received = 'an array';
   } else if (inst && inst.nodeType === ELEMENT_NODE && inst.tagName) {
     received = 'a DOM node';
@@ -106,12 +112,10 @@ function validateClassInstance(inst, methodName) {
   } else {
     received = stringified;
   }
-  invariant(
-    false,
-    '%s(...): the first argument must be a React class instance. ' +
-      'Instead received: %s.',
-    methodName,
-    received,
+
+  throw new Error(
+    `${methodName}(...): the first argument must be a React class instance. ` +
+      `Instead received: ${received}.`,
   );
 }
 
@@ -182,13 +186,13 @@ function findAllInRenderedTree(inst, test) {
 }
 
 /**
- * Finds all instance of components in the rendered tree that are DOM
+ * Finds all instances of components in the rendered tree that are DOM
  * components with the class name matching `className`.
  * @return {array} an array of all the matches.
  */
 function scryRenderedDOMComponentsWithClass(root, classNames) {
   validateClassInstance(root, 'scryRenderedDOMComponentsWithClass');
-  return findAllInRenderedTree(root, function(inst) {
+  return findAllInRenderedTree(root, function (inst) {
     if (isDOMComponent(inst)) {
       let className = inst.className;
       if (typeof className !== 'string') {
@@ -197,15 +201,17 @@ function scryRenderedDOMComponentsWithClass(root, classNames) {
       }
       const classList = className.split(/\s+/);
 
-      if (!Array.isArray(classNames)) {
-        invariant(
-          classNames !== undefined,
-          'TestUtils.scryRenderedDOMComponentsWithClass expects a ' +
-            'className as a second argument.',
-        );
+      if (!isArray(classNames)) {
+        if (classNames === undefined) {
+          throw new Error(
+            'TestUtils.scryRenderedDOMComponentsWithClass expects a ' +
+              'className as a second argument.',
+          );
+        }
+
         classNames = classNames.split(/\s+/);
       }
-      return classNames.every(function(name) {
+      return classNames.every(function (name) {
         return classList.indexOf(name) !== -1;
       });
     }
@@ -235,13 +241,13 @@ function findRenderedDOMComponentWithClass(root, className) {
 }
 
 /**
- * Finds all instance of components in the rendered tree that are DOM
+ * Finds all instances of components in the rendered tree that are DOM
  * components with the tag name matching `tagName`.
  * @return {array} an array of all the matches.
  */
 function scryRenderedDOMComponentsWithTag(root, tagName) {
   validateClassInstance(root, 'scryRenderedDOMComponentsWithTag');
-  return findAllInRenderedTree(root, function(inst) {
+  return findAllInRenderedTree(root, function (inst) {
     return (
       isDOMComponent(inst) &&
       inst.tagName.toUpperCase() === tagName.toUpperCase()
@@ -276,7 +282,7 @@ function findRenderedDOMComponentWithTag(root, tagName) {
  */
 function scryRenderedComponentsWithType(root, componentType) {
   validateClassInstance(root, 'scryRenderedComponentsWithType');
-  return findAllInRenderedTree(root, function(inst) {
+  return findAllInRenderedTree(root, function (inst) {
     return isCompositeComponentWithType(inst, componentType);
   });
 }
@@ -329,7 +335,7 @@ function mockComponent(module, mockTagName) {
 
   mockTagName = mockTagName || module.mockTagName || 'div';
 
-  module.prototype.render.mockImplementation(function() {
+  module.prototype.render.mockImplementation(function () {
     return React.createElement(mockTagName, null, this.props.children);
   });
 
@@ -365,7 +371,7 @@ function executeDispatch(event, listener, inst) {
 function executeDispatchesInOrder(event) {
   const dispatchListeners = event._dispatchListeners;
   const dispatchInstances = event._dispatchInstances;
-  if (Array.isArray(dispatchListeners)) {
+  if (isArray(dispatchListeners)) {
     for (let i = 0; i < dispatchListeners.length; i++) {
       if (event.isPropagationStopped()) {
         break;
@@ -386,7 +392,7 @@ function executeDispatchesInOrder(event) {
  * @param {?object} event Synthetic event to be dispatched.
  * @private
  */
-const executeDispatchesAndRelease = function(event: ReactSyntheticEvent) {
+const executeDispatchesAndRelease = function (event /* ReactSyntheticEvent */) {
   if (event) {
     executeDispatchesInOrder(event);
 
@@ -413,7 +419,11 @@ function getParent(inst) {
     // events to their parent. We could also go through parentNode on the
     // host node but that wouldn't work for React Native and doesn't let us
     // do the portal feature.
-  } while (inst && inst.tag !== HostComponent);
+  } while (
+    inst &&
+    inst.tag !== HostComponent &&
+    (!enableHostSingletons ? true : inst.tag !== HostSingleton)
+  );
   if (inst) {
     return inst;
   }
@@ -462,7 +472,7 @@ function shouldPreventMouseEvent(name, type, props) {
  * @param {string} registrationName Name of listener (e.g. `onClick`).
  * @return {?function} The stored callback.
  */
-function getListener(inst: Fiber, registrationName: string) {
+function getListener(inst /* Fiber */, registrationName: string) {
   // TODO: shouldPreventMouseEvent is DOM-specific and definitely should not
   // live here; needs to be moved to a better place soon
   const stateNode = inst.stateNode;
@@ -479,12 +489,13 @@ function getListener(inst: Fiber, registrationName: string) {
   if (shouldPreventMouseEvent(registrationName, inst.type, props)) {
     return null;
   }
-  invariant(
-    !listener || typeof listener === 'function',
-    'Expected `%s` listener to be a function, instead got a value of `%s` type.',
-    registrationName,
-    typeof listener,
-  );
+
+  if (listener && typeof listener !== 'function') {
+    throw new Error(
+      `Expected \`${registrationName}\` listener to be a function, instead got a value of \`${typeof listener}\` type.`,
+    );
+  }
+
   return listener;
 }
 
@@ -564,18 +575,21 @@ const directDispatchEventTypes = new Set([
  * - ... (All keys from event plugin `eventTypes` objects)
  */
 function makeSimulator(eventType) {
-  return function(domNode, eventData) {
-    invariant(
-      !React.isValidElement(domNode),
-      'TestUtils.Simulate expected a DOM node as the first argument but received ' +
-        'a React element. Pass the DOM node you wish to simulate the event on instead. ' +
-        'Note that TestUtils.Simulate will not work if you are using shallow rendering.',
-    );
-    invariant(
-      !isCompositeComponent(domNode),
-      'TestUtils.Simulate expected a DOM node as the first argument but received ' +
-        'a component instance. Pass the DOM node you wish to simulate the event on instead.',
-    );
+  return function (domNode, eventData) {
+    if (React.isValidElement(domNode)) {
+      throw new Error(
+        'TestUtils.Simulate expected a DOM node as the first argument but received ' +
+          'a React element. Pass the DOM node you wish to simulate the event on instead. ' +
+          'Note that TestUtils.Simulate will not work if you are using shallow rendering.',
+      );
+    }
+
+    if (isCompositeComponent(domNode)) {
+      throw new Error(
+        'TestUtils.Simulate expected a DOM node as the first argument but received ' +
+          'a component instance. Pass the DOM node you wish to simulate the event on instead.',
+      );
+    }
 
     const reactName = 'on' + eventType[0].toUpperCase() + eventType.slice(1);
     const fakeNativeEvent = new Event();
@@ -594,7 +608,7 @@ function makeSimulator(eventType) {
     // Since we aren't using pooling, always persist the event. This will make
     // sure it's marked and won't warn when setting additional properties.
     event.persist();
-    Object.assign(event, eventData);
+    assign(event, eventData);
 
     if (directDispatchEventTypes.has(eventType)) {
       accumulateDirectDispatchesSingle(event);
@@ -602,7 +616,7 @@ function makeSimulator(eventType) {
       accumulateTwoPhaseDispatchesSingle(event);
     }
 
-    ReactDOM.unstable_batchedUpdates(function() {
+    ReactDOM.unstable_batchedUpdates(function () {
       // Normally extractEvent enqueues a state restore, but we'll just always
       // do that since we're by-passing it here.
       enqueueStateRestore(domNode);
@@ -643,6 +657,7 @@ const simulatedEventTypes = [
   'pointerUp',
   'rateChange',
   'reset',
+  'resize',
   'seeked',
   'submit',
   'touchCancel',
@@ -726,5 +741,4 @@ export {
   nativeTouchData,
   Simulate,
   act,
-  unstable_concurrentAct,
 };

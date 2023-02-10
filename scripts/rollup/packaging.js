@@ -17,12 +17,15 @@ const {
 
 const {
   NODE_ES2015,
+  NODE_ESM,
   UMD_DEV,
   UMD_PROD,
   UMD_PROFILING,
   NODE_DEV,
   NODE_PROD,
   NODE_PROFILING,
+  BUN_DEV,
+  BUN_PROD,
   FB_WWW_DEV,
   FB_WWW_PROD,
   FB_WWW_PROFILING,
@@ -32,6 +35,7 @@ const {
   RN_FB_DEV,
   RN_FB_PROD,
   RN_FB_PROFILING,
+  BROWSER_SCRIPT,
 } = Bundles.bundleTypes;
 
 function getPackageName(name) {
@@ -41,9 +45,14 @@ function getPackageName(name) {
   return name;
 }
 
-function getBundleOutputPath(bundleType, filename, packageName) {
+function getBundleOutputPath(bundle, bundleType, filename, packageName) {
   switch (bundleType) {
     case NODE_ES2015:
+      return `build/node_modules/${packageName}/cjs/${filename}`;
+    case NODE_ESM:
+      return `build/node_modules/${packageName}/esm/${filename}`;
+    case BUN_DEV:
+    case BUN_PROD:
       return `build/node_modules/${packageName}/cjs/${filename}`;
     case NODE_DEV:
     case NODE_PROD:
@@ -72,6 +81,7 @@ function getBundleOutputPath(bundleType, filename, packageName) {
       switch (packageName) {
         case 'scheduler':
         case 'react':
+        case 'react-is':
         case 'react-test-renderer':
           return `build/facebook-react-native/${packageName}/cjs/${filename}`;
         case 'react-native-renderer':
@@ -79,9 +89,28 @@ function getBundleOutputPath(bundleType, filename, packageName) {
             /\.js$/,
             '.fb.js'
           )}`;
+        case 'react-server-native-relay':
+          return `build/facebook-relay/flight/${filename}`;
         default:
           throw new Error('Unknown RN package.');
       }
+    case BROWSER_SCRIPT: {
+      // Bundles that are served as browser scripts need to be able to be sent
+      // straight to the browser with any additional bundling. We shouldn't use
+      // a module to re-export. Depending on how they are served, they also may
+      // not go through package.json module resolution, so we shouldn't rely on
+      // that either. We should consider the output path as part of the public
+      // contract, and explicitly specify its location within the package's
+      // directory structure.
+      const outputPath = bundle.outputPath;
+      if (!outputPath) {
+        throw new Error(
+          'Bundles with type BROWSER_SCRIPT must specific an explicit ' +
+            'output path.'
+        );
+      }
+      return `build/node_modules/${packageName}/${outputPath}`;
+    }
     default:
       throw new Error('Unknown bundle type.');
   }
@@ -133,7 +162,11 @@ let entryPointsToHasBundle = new Map();
 for (const bundle of Bundles.bundles) {
   let hasBundle = entryPointsToHasBundle.get(bundle.entry);
   if (!hasBundle) {
-    entryPointsToHasBundle.set(bundle.entry, bundle.bundleTypes.length > 0);
+    const hasNonFBBundleTypes = bundle.bundleTypes.some(
+      type =>
+        type !== FB_WWW_DEV && type !== FB_WWW_PROD && type !== FB_WWW_PROFILING
+    );
+    entryPointsToHasBundle.set(bundle.entry, hasNonFBBundleTypes);
   }
 }
 
@@ -142,6 +175,8 @@ function filterOutEntrypoints(name) {
   let jsonPath = `build/node_modules/${name}/package.json`;
   let packageJSON = JSON.parse(readFileSync(jsonPath));
   let files = packageJSON.files;
+  let exportsJSON = packageJSON.exports;
+  let browserJSON = packageJSON.browser;
   if (!Array.isArray(files)) {
     throw new Error('expected all package.json files to contain a files field');
   }
@@ -169,6 +204,26 @@ function filterOutEntrypoints(name) {
       files.splice(i, 1);
       i--;
       unlinkSync(`build/node_modules/${name}/${filename}`);
+      changed = true;
+      // Remove it from the exports field too if it exists.
+      if (exportsJSON) {
+        if (filename === 'index.js') {
+          delete exportsJSON['.'];
+        } else {
+          delete exportsJSON['./' + filename.replace(/\.js$/, '')];
+        }
+      }
+      if (browserJSON) {
+        delete browserJSON['./' + filename];
+      }
+    }
+
+    // We only export the source directory so Jest and Rollup can access them
+    // during local development and at build time. The files don't exist in the
+    // public builds, so we don't need the export entry, either.
+    const sourceWildcardExport = './src/*';
+    if (exportsJSON && exportsJSON[sourceWildcardExport]) {
+      delete exportsJSON[sourceWildcardExport];
       changed = true;
     }
   }

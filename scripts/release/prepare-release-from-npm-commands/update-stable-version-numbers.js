@@ -38,8 +38,8 @@ const run = async ({cwd, packages, version}, versionsMap) => {
           // We compare source packages to determine what the new scheduler dependency constraint should be.
           // To do this, we look at both the local version of the scheduler (e.g. 0.11.0),
           // and the dependency constraint in the local version of react-dom (e.g. scheduler@^0.11.0).
-          const sourceDependencyVersion = sourcePackageJSONs.get(dependencyName)
-            .version;
+          const sourceDependencyVersion =
+            sourcePackageJSONs.get(dependencyName).version;
           const sourceDependencyConstraint = sourceDependencies[dependencyName];
 
           // If the source dependency's version and the constraint match,
@@ -47,17 +47,16 @@ const run = async ({cwd, packages, version}, versionsMap) => {
           // (e.g. scheduler@^0.11.0 becomes scheduler@^0.12.0 when we release scheduler 0.12.0).
           // Otherwise we leave the constraint alone (e.g. react@^16.0.0 doesn't change between releases).
           // Note that in both cases, we must update the target package JSON,
-          // since "next" releases are all locked to the version (e.g. 0.0.0-ddaf2b07c).
+          // since "next" releases are all locked to the version (e.g. 0.0.0-0e526bcec-20210202).
           if (
             sourceDependencyVersion ===
             sourceDependencyConstraint.replace(/^[\^\~]/, '')
           ) {
-            targetDependencies[
-              dependencyName
-            ] = sourceDependencyConstraint.replace(
-              sourceDependencyVersion,
-              versionsMap.get(dependencyName)
-            );
+            targetDependencies[dependencyName] =
+              sourceDependencyConstraint.replace(
+                sourceDependencyVersion,
+                versionsMap.get(dependencyName)
+              );
           } else {
             targetDependencies[dependencyName] = sourceDependencyConstraint;
           }
@@ -69,7 +68,7 @@ const run = async ({cwd, packages, version}, versionsMap) => {
   // Update all package JSON versions and their dependencies/peerDependencies.
   // This must be done in a way that respects semver constraints (e.g. 16.7.0, ^16.7.0, ^16.0.0).
   // To do this, we use the dependencies defined in the source package JSONs,
-  // because the "next" dependencies have already been flattened to an exact match (e.g. 0.0.0-ddaf2b07c).
+  // because the "next" dependencies have already been flattened to an exact match (e.g. 0.0.0-0e526bcec-20210202).
   for (let i = 0; i < packages.length; i++) {
     const packageName = packages[i];
     const packageJSONPath = join(nodeModulesPath, packageName, 'package.json');
@@ -132,7 +131,7 @@ const run = async ({cwd, packages, version}, versionsMap) => {
   let diff = '';
   let numFilesModified = 0;
 
-  // Find-and-replace hard coded version (in built JS) for renderers.
+  // Find-and-replace hardcoded version (in built JS) for renderers.
   for (let i = 0; i < packages.length; i++) {
     const packageName = packages[i];
     const packagePath = join(nodeModulesPath, packageName);

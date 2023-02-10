@@ -1,13 +1,12 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
-import invariant from 'shared/invariant';
-
 import ReactNoopUpdateQueue from './ReactNoopUpdateQueue';
+import assign from 'shared/assign';
 
 const emptyObject = {};
 if (__DEV__) {
@@ -54,14 +53,18 @@ Component.prototype.isReactComponent = {};
  * @final
  * @protected
  */
-Component.prototype.setState = function(partialState, callback) {
-  invariant(
-    typeof partialState === 'object' ||
-      typeof partialState === 'function' ||
-      partialState == null,
-    'setState(...): takes an object of state variables to update or a ' +
-      'function which returns an object of state variables.',
-  );
+Component.prototype.setState = function (partialState, callback) {
+  if (
+    typeof partialState !== 'object' &&
+    typeof partialState !== 'function' &&
+    partialState != null
+  ) {
+    throw new Error(
+      'setState(...): takes an object of state variables to update or a ' +
+        'function which returns an object of state variables.',
+    );
+  }
+
   this.updater.enqueueSetState(this, partialState, callback, 'setState');
 };
 
@@ -79,7 +82,7 @@ Component.prototype.setState = function(partialState, callback) {
  * @final
  * @protected
  */
-Component.prototype.forceUpdate = function(callback) {
+Component.prototype.forceUpdate = function (callback) {
   this.updater.enqueueForceUpdate(this, callback, 'forceUpdate');
 };
 
@@ -101,9 +104,9 @@ if (__DEV__) {
         'https://github.com/facebook/react/issues/3236).',
     ],
   };
-  const defineDeprecationWarning = function(methodName, info) {
+  const defineDeprecationWarning = function (methodName, info) {
     Object.defineProperty(Component.prototype, methodName, {
-      get: function() {
+      get: function () {
         console.warn(
           '%s(...) is deprecated in plain JavaScript React classes. %s',
           info[0],
@@ -137,7 +140,7 @@ function PureComponent(props, context, updater) {
 const pureComponentPrototype = (PureComponent.prototype = new ComponentDummy());
 pureComponentPrototype.constructor = PureComponent;
 // Avoid an extra prototype jump for these methods.
-Object.assign(pureComponentPrototype, Component.prototype);
+assign(pureComponentPrototype, Component.prototype);
 pureComponentPrototype.isPureReactComponent = true;
 
 export {Component, PureComponent};

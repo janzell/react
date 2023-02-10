@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -158,6 +158,11 @@ describe('transform-test-gate-pragma', () => {
 
   // @gate environment === 'fake-environment'
   test('single quoted strings', () => {
+    expect(shouldPass).toBe(true);
+  });
+
+  // @gate flagThatIsOn // This is a comment
+  test('line comment', () => {
     expect(shouldPass).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,13 +7,15 @@
  * @flow
  */
 
-import type {Thenable} from 'shared/ReactTypes';
+import type {ReactContext, Thenable} from 'shared/ReactTypes';
 
 import * as React from 'react';
 import {createContext} from 'react';
 
+// TODO (cache) Remove this cache; it is outdated and will not work with newer APIs like startTransition.
+
 // Cache implementation was forked from the React repo:
-// https://github.com/facebook/react/blob/master/packages/react-cache/src/ReactCache.js
+// https://github.com/facebook/react/blob/main/packages/react-cache/src/ReactCache.js
 //
 // This cache is simpler than react-cache in that:
 // 1. Individual items don't need to be invalidated.
@@ -24,22 +26,24 @@ import {createContext} from 'react';
 
 export type {Thenable};
 
-type Suspender = {then(resolve: () => mixed, reject: () => mixed): mixed, ...};
+interface Suspender {
+  then(resolve: () => mixed, reject: () => mixed): mixed;
+}
 
-type PendingResult = {|
+type PendingResult = {
   status: 0,
   value: Suspender,
-|};
+};
 
-type ResolvedResult<Value> = {|
+type ResolvedResult<Value> = {
   status: 1,
   value: Value,
-|};
+};
 
-type RejectedResult = {|
+type RejectedResult = {
   status: 2,
   value: mixed,
-|};
+};
 
 type Result<Value> = PendingResult | ResolvedResult<Value> | RejectedResult;
 
@@ -59,7 +63,7 @@ const Rejected = 2;
 const ReactCurrentDispatcher = (React: any)
   .__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher;
 
-function readContext(Context, observedBits) {
+function readContext(Context: ReactContext<null>) {
   const dispatcher = ReactCurrentDispatcher.current;
   if (dispatcher === null) {
     throw new Error(
@@ -68,7 +72,7 @@ function readContext(Context, observedBits) {
         'lifecycle methods.',
     );
   }
-  return dispatcher.readContext(Context, observedBits);
+  return dispatcher.readContext(Context);
 }
 
 const CacheContext = createContext(null);
@@ -84,7 +88,9 @@ const resourceConfigs: Map<Resource<any, any, any>, Config> = new Map();
 function getEntriesForResource(
   resource: any,
 ): Map<any, any> | WeakMap<any, any> {
-  let entriesForResource = ((entries.get(resource): any): Map<any, any>);
+  let entriesForResource: Map<any, any> | WeakMap<any, any> = ((entries.get(
+    resource,
+  ): any): Map<any, any>);
   if (entriesForResource === undefined) {
     const config = resourceConfigs.get(resource);
     entriesForResource =

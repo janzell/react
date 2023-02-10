@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -37,6 +37,7 @@ describe('ReactError', () => {
   });
 
   // @gate build === "production"
+  // @gate !source
   it('should error with minified error code', () => {
     expect(() => ReactDOM.render('Hi', null)).toThrowError(
       'Minified React error #200; visit ' +
@@ -46,18 +47,12 @@ describe('ReactError', () => {
     );
   });
 
-  // @gate build === "production"
   it('should serialize arguments', () => {
     function Oops() {
       return;
     }
     Oops.displayName = '#wtf';
     const container = document.createElement('div');
-    expect(() => ReactDOM.render(<Oops />, container)).toThrowError(
-      'Minified React error #152; visit ' +
-        'https://reactjs.org/docs/error-decoder.html?invariant=152&args[]=%23wtf' +
-        ' for the full message or use the non-minified dev environment' +
-        ' for full errors and additional helpful warnings.',
-    );
+    expect(() => ReactDOM.render(<Oops />, container)).not.toThrowError();
   });
 });

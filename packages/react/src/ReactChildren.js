@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -9,12 +9,13 @@
 
 import type {ReactNodeList} from 'shared/ReactTypes';
 
-import invariant from 'shared/invariant';
+import isArray from 'shared/isArray';
 import {
   getIteratorFn,
   REACT_ELEMENT_TYPE,
   REACT_PORTAL_TYPE,
 } from 'shared/ReactSymbols';
+import {checkKeyStringCoercion} from 'shared/CheckStringCoercion';
 
 import {isValidElement, cloneAndReplaceKey} from './ReactElement';
 
@@ -33,7 +34,7 @@ function escape(key: string): string {
     '=': '=0',
     ':': '=2',
   };
-  const escapedString = key.replace(escapeRegex, function(match) {
+  const escapedString = key.replace(escapeRegex, function (match) {
     return escaperLookup[match];
   });
 
@@ -64,6 +65,9 @@ function getElementKey(element: any, index: number): string {
   // that we don't block potential future ES APIs.
   if (typeof element === 'object' && element !== null && element.key != null) {
     // Explicit key
+    if (__DEV__) {
+      checkKeyStringCoercion(element.key);
+    }
     return escape('' + element.key);
   }
   // Implicit key determined by the index in the set
@@ -110,7 +114,7 @@ function mapIntoArray(
     // so that it's consistent if the number of children grows:
     const childKey =
       nameSoFar === '' ? SEPARATOR + getElementKey(child, 0) : nameSoFar;
-    if (Array.isArray(mappedChild)) {
+    if (isArray(mappedChild)) {
       let escapedChildKey = '';
       if (childKey != null) {
         escapedChildKey = escapeUserProvidedKey(childKey) + '/';
@@ -118,6 +122,14 @@ function mapIntoArray(
       mapIntoArray(mappedChild, array, escapedChildKey, '', c => c);
     } else if (mappedChild != null) {
       if (isValidElement(mappedChild)) {
+        if (__DEV__) {
+          // The `if` statement here prevents auto-disabling of the safe
+          // coercion ESLint rule, so we must manually disable it below.
+          // $FlowFixMe Flow incorrectly thinks React.Portal doesn't have a key
+          if (mappedChild.key && (!child || child.key !== mappedChild.key)) {
+            checkKeyStringCoercion(mappedChild.key);
+          }
+        }
         mappedChild = cloneAndReplaceKey(
           mappedChild,
           // Keep both the (mapped) and old keys if they differ, just as
@@ -125,8 +137,10 @@ function mapIntoArray(
           escapedPrefix +
             // $FlowFixMe Flow incorrectly thinks React.Portal doesn't have a key
             (mappedChild.key && (!child || child.key !== mappedChild.key)
-              ? // $FlowFixMe Flow incorrectly thinks existing element's key can be a number
-                escapeUserProvidedKey('' + mappedChild.key) + '/'
+              ? escapeUserProvidedKey(
+                  // $FlowFixMe[unsafe-addition]
+                  '' + mappedChild.key, // eslint-disable-line react-internal/safe-string-coercion
+                ) + '/'
               : '') +
             childKey,
         );
@@ -142,7 +156,7 @@ function mapIntoArray(
   const nextNamePrefix =
     nameSoFar === '' ? SEPARATOR : nameSoFar + SUBSEPARATOR;
 
-  if (Array.isArray(children)) {
+  if (isArray(children)) {
     for (let i = 0; i < children.length; i++) {
       child = children[i];
       nextName = nextNamePrefix + getElementKey(child, i);
@@ -177,6 +191,7 @@ function mapIntoArray(
       const iterator = iteratorFn.call(iterableChildren);
       let step;
       let ii = 0;
+      // $FlowFixMe `iteratorFn` might return null according to typing.
       while (!(step = iterator.next()).done) {
         child = step.value;
         nextName = nextNamePrefix + getElementKey(child, ii++);
@@ -189,15 +204,19 @@ function mapIntoArray(
         );
       }
     } else if (type === 'object') {
-      const childrenString = '' + (children: any);
-      invariant(
-        false,
-        'Objects are not valid as a React child (found: %s). ' +
+      // eslint-disable-next-line react-internal/safe-string-coercion
+      const childrenString = String((children: any));
+
+      throw new Error(
+        `Objects are not valid as a React child (found: ${
+          childrenString === '[object Object]'
+            ? 'object with keys {' +
+              Object.keys((children: any)).join(', ') +
+              '}'
+            : childrenString
+        }). ` +
           'If you meant to render a collection of children, use an array ' +
           'instead.',
-        childrenString === '[object Object]'
-          ? 'object with keys {' + Object.keys((children: any)).join(', ') + '}'
-          : childrenString,
       );
     }
   }
@@ -205,7 +224,7 @@ function mapIntoArray(
   return subtreeCount;
 }
 
-type MapFunc = (child: ?React$Node) => ?ReactNodeList;
+type MapFunc = (child: ?React$Node, index: number) => ?ReactNodeList;
 
 /**
  * Maps children that are typically specified as `props.children`.
@@ -228,9 +247,9 @@ function mapChildren(
   if (children == null) {
     return children;
   }
-  const result = [];
+  const result: Array<React$Node> = [];
   let count = 0;
-  mapIntoArray(children, result, '', '', function(child) {
+  mapIntoArray(children, result, '', '', function (child) {
     return func.call(context, child, count++);
   });
   return result;
@@ -275,7 +294,8 @@ function forEachChildren(
 ): void {
   mapChildren(
     children,
-    function() {
+    // $FlowFixMe[missing-this-annot]
+    function () {
       forEachFunc.apply(this, arguments);
       // Don't return anything.
     },
@@ -308,10 +328,12 @@ function toArray(children: ?ReactNodeList): Array<React$Node> {
  * structure.
  */
 function onlyChild<T>(children: T): T {
-  invariant(
-    isValidElement(children),
-    'React.Children.only expected to receive a single React element child.',
-  );
+  if (!isValidElement(children)) {
+    throw new Error(
+      'React.Children.only expected to receive a single React element child.',
+    );
+  }
+
   return children;
 }
 

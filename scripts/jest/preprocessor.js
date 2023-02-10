@@ -4,6 +4,7 @@ const path = require('path');
 
 const babel = require('@babel/core');
 const coffee = require('coffee-script');
+const hermesParser = require('hermes-parser');
 
 const tsPreprocessor = require('./typescript/preprocessor');
 const createCacheKeyFunction = require('fbjs-scripts/jest/createCacheKeyFunction');
@@ -12,9 +13,6 @@ const pathToBabel = path.join(
   require.resolve('@babel/core'),
   '../..',
   'package.json'
-);
-const pathToBabelPluginDevWithCode = require.resolve(
-  '../error-codes/transform-error-messages'
 );
 const pathToBabelPluginReplaceConsoleCalls = require.resolve(
   '../babel/transform-replace-console-calls'
@@ -28,6 +26,9 @@ const pathToTransformInfiniteLoops = require.resolve(
 const pathToTransformTestGatePragma = require.resolve(
   '../babel/transform-test-gate-pragma'
 );
+const pathToTransformReactVersionPragma = require.resolve(
+  '../babel/transform-react-version-pragma'
+);
 const pathToBabelrc = path.join(__dirname, '..', '..', 'babel.config.js');
 const pathToErrorCodes = require.resolve('../error-codes/codes.json');
 
@@ -35,8 +36,6 @@ const babelOptions = {
   plugins: [
     // For Node environment only. For builds, Rollup takes care of ESM.
     require.resolve('@babel/plugin-transform-modules-commonjs'),
-
-    pathToBabelPluginDevWithCode,
 
     // Keep stacks detailed in tests.
     // Don't put this in .babelrc so that we don't embed filenames
@@ -58,15 +57,19 @@ const babelOptions = {
 };
 
 module.exports = {
-  process: function(src, filePath) {
+  process: function (src, filePath) {
+    if (filePath.match(/\.css$/)) {
+      // Don't try to parse CSS modules; they aren't needed for tests anyway.
+      return {code: ''};
+    }
     if (filePath.match(/\.coffee$/)) {
-      return coffee.compile(src, {bare: true});
+      return {code: coffee.compile(src, {bare: true})};
     }
     if (filePath.match(/\.ts$/) && !filePath.match(/\.d\.ts$/)) {
-      return tsPreprocessor.compile(src, filePath);
+      return {code: tsPreprocessor.compile(src, filePath)};
     }
     if (filePath.match(/\.json$/)) {
-      return src;
+      return {code: src};
     }
     if (!filePath.match(/\/third_party\//)) {
       // for test files, we also apply the async-await transform, but we want to
@@ -83,27 +86,48 @@ module.exports = {
       const plugins = (isTestFile ? testOnlyPlugins : sourceOnlyPlugins).concat(
         babelOptions.plugins
       );
-      return babel.transform(
-        src,
-        Object.assign(
-          {filename: path.relative(process.cwd(), filePath)},
-          babelOptions,
-          {
-            plugins,
-          }
-        )
-      );
+      if (
+        isTestFile &&
+        isInDevToolsPackages &&
+        (process.env.REACT_VERSION ||
+          filePath.match(/\/transform-react-version-pragma-test/))
+      ) {
+        plugins.push(pathToTransformReactVersionPragma);
+      }
+      let sourceAst = hermesParser.parse(src, {babel: true});
+      return {
+        code: babel.transformFromAstSync(
+          sourceAst,
+          src,
+          Object.assign(
+            {filename: path.relative(process.cwd(), filePath)},
+            babelOptions,
+            {
+              plugins,
+              sourceMaps: process.env.JEST_ENABLE_SOURCE_MAPS
+                ? process.env.JEST_ENABLE_SOURCE_MAPS
+                : false,
+            }
+          )
+        ).code,
+      };
     }
-    return src;
+    return {code: src};
   },
 
-  getCacheKey: createCacheKeyFunction([
-    __filename,
-    pathToBabel,
-    pathToBabelrc,
-    pathToBabelPluginDevWithCode,
-    pathToTransformInfiniteLoops,
-    pathToTransformTestGatePragma,
-    pathToErrorCodes,
-  ]),
+  getCacheKey: createCacheKeyFunction(
+    [
+      __filename,
+      pathToBabel,
+      pathToBabelrc,
+      pathToTransformInfiniteLoops,
+      pathToTransformTestGatePragma,
+      pathToTransformReactVersionPragma,
+      pathToErrorCodes,
+    ],
+    [
+      (process.env.REACT_VERSION != null).toString(),
+      (process.env.NODE_ENV === 'development').toString(),
+    ]
+  ),
 };

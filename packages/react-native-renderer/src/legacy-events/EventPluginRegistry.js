@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -13,12 +13,10 @@ import type {
   PluginName,
   LegacyPluginModule,
 } from './PluginModuleType';
-
-import invariant from 'shared/invariant';
+import type {TopLevelType} from './TopLevelEventTypes';
 
 type NamesToPlugins = {
   [key: PluginName]: LegacyPluginModule<AnyNativeEvent>,
-  ...,
 };
 type EventPluginOrder = null | Array<PluginName>;
 
@@ -44,35 +42,41 @@ function recomputePluginOrdering(): void {
   }
   for (const pluginName in namesToPlugins) {
     const pluginModule = namesToPlugins[pluginName];
+    // $FlowFixMe[incompatible-use] found when upgrading Flow
     const pluginIndex = eventPluginOrder.indexOf(pluginName);
-    invariant(
-      pluginIndex > -1,
-      'EventPluginRegistry: Cannot inject event plugins that do not exist in ' +
-        'the plugin ordering, `%s`.',
-      pluginName,
-    );
+
+    if (pluginIndex <= -1) {
+      throw new Error(
+        'EventPluginRegistry: Cannot inject event plugins that do not exist in ' +
+          `the plugin ordering, \`${pluginName}\`.`,
+      );
+    }
+
     if (plugins[pluginIndex]) {
       continue;
     }
-    invariant(
-      pluginModule.extractEvents,
-      'EventPluginRegistry: Event plugins must implement an `extractEvents` ' +
-        'method, but `%s` does not.',
-      pluginName,
-    );
+
+    if (!pluginModule.extractEvents) {
+      throw new Error(
+        'EventPluginRegistry: Event plugins must implement an `extractEvents` ' +
+          `method, but \`${pluginName}\` does not.`,
+      );
+    }
+
     plugins[pluginIndex] = pluginModule;
     const publishedEvents = pluginModule.eventTypes;
     for (const eventName in publishedEvents) {
-      invariant(
-        publishEventForPlugin(
+      if (
+        !publishEventForPlugin(
           publishedEvents[eventName],
           pluginModule,
           eventName,
-        ),
-        'EventPluginRegistry: Failed to publish event `%s` for plugin `%s`.',
-        eventName,
-        pluginName,
-      );
+        )
+      ) {
+        throw new Error(
+          `EventPluginRegistry: Failed to publish event \`${eventName}\` for plugin \`${pluginName}\`.`,
+        );
+      }
     }
   }
 }
@@ -90,12 +94,13 @@ function publishEventForPlugin(
   pluginModule: LegacyPluginModule<AnyNativeEvent>,
   eventName: string,
 ): boolean {
-  invariant(
-    !eventNameDispatchConfigs.hasOwnProperty(eventName),
-    'EventPluginRegistry: More than one plugin attempted to publish the same ' +
-      'event name, `%s`.',
-    eventName,
-  );
+  if (eventNameDispatchConfigs.hasOwnProperty(eventName)) {
+    throw new Error(
+      'EventPluginRegistry: More than one plugin attempted to publish the same ' +
+        `event name, \`${eventName}\`.`,
+    );
+  }
+
   eventNameDispatchConfigs[eventName] = dispatchConfig;
 
   const phasedRegistrationNames = dispatchConfig.phasedRegistrationNames;
@@ -134,12 +139,13 @@ function publishRegistrationName(
   pluginModule: LegacyPluginModule<AnyNativeEvent>,
   eventName: string,
 ): void {
-  invariant(
-    !registrationNameModules[registrationName],
-    'EventPluginRegistry: More than one plugin attempted to publish the same ' +
-      'registration name, `%s`.',
-    registrationName,
-  );
+  if (registrationNameModules[registrationName]) {
+    throw new Error(
+      'EventPluginRegistry: More than one plugin attempted to publish the same ' +
+        `registration name, \`${registrationName}\`.`,
+    );
+  }
+
   registrationNameModules[registrationName] = pluginModule;
   registrationNameDependencies[registrationName] =
     pluginModule.eventTypes[eventName].dependencies;
@@ -161,22 +167,28 @@ function publishRegistrationName(
 /**
  * Ordered list of injected plugins.
  */
-export const plugins = [];
+export const plugins: Array<LegacyPluginModule<AnyNativeEvent>> = [];
 
 /**
  * Mapping from event name to dispatch config
  */
-export const eventNameDispatchConfigs = {};
+export const eventNameDispatchConfigs: {
+  [eventName: string]: DispatchConfig,
+} = {};
 
 /**
  * Mapping from registration name to plugin module
  */
-export const registrationNameModules = {};
+export const registrationNameModules: {
+  [registrationName: string]: LegacyPluginModule<AnyNativeEvent>,
+} = {};
 
 /**
  * Mapping from registration name to event name
  */
-export const registrationNameDependencies = {};
+export const registrationNameDependencies: {
+  [registrationName: string]: Array<TopLevelType> | void,
+} = {};
 
 /**
  * Mapping from lowercase registration names to the properly cased version,
@@ -184,7 +196,9 @@ export const registrationNameDependencies = {};
  * only in __DEV__.
  * @type {Object}
  */
-export const possibleRegistrationNames = __DEV__ ? {} : (null: any);
+export const possibleRegistrationNames: {
+  [lowerCasedName: string]: string,
+} = __DEV__ ? {} : (null: any);
 // Trust the developer to only use possibleRegistrationNames in __DEV__
 
 /**
@@ -198,12 +212,15 @@ export const possibleRegistrationNames = __DEV__ ? {} : (null: any);
 export function injectEventPluginOrder(
   injectedEventPluginOrder: EventPluginOrder,
 ): void {
-  invariant(
-    !eventPluginOrder,
-    'EventPluginRegistry: Cannot inject event plugin ordering more than ' +
-      'once. You are likely trying to load more than one copy of React.',
-  );
+  if (eventPluginOrder) {
+    throw new Error(
+      'EventPluginRegistry: Cannot inject event plugin ordering more than ' +
+        'once. You are likely trying to load more than one copy of React.',
+    );
+  }
+
   // Clone the ordering so it cannot be dynamically mutated.
+  // $FlowFixMe[method-unbinding] found when upgrading Flow
   eventPluginOrder = Array.prototype.slice.call(injectedEventPluginOrder);
   recomputePluginOrdering();
 }
@@ -230,12 +247,13 @@ export function injectEventPluginsByName(
       !namesToPlugins.hasOwnProperty(pluginName) ||
       namesToPlugins[pluginName] !== pluginModule
     ) {
-      invariant(
-        !namesToPlugins[pluginName],
-        'EventPluginRegistry: Cannot inject two different event plugins ' +
-          'using the same name, `%s`.',
-        pluginName,
-      );
+      if (namesToPlugins[pluginName]) {
+        throw new Error(
+          'EventPluginRegistry: Cannot inject two different event plugins ' +
+            `using the same name, \`${pluginName}\`.`,
+        );
+      }
+
       namesToPlugins[pluginName] = pluginModule;
       isOrderingDirty = true;
     }

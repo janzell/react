@@ -2,17 +2,25 @@
  * Install the hook on window, which is an event emitter.
  * Note because Chrome content scripts cannot directly modify the window object,
  * we are evaling this function by inserting a script tag.
- * That's why we have to inline the whole event emitter implementation here.
+ * That's why we have to inline the whole event emitter implementation,
+ * the string format implementation, and part of the console implementation here.
  *
  * @flow
  */
 
+import type {BrowserTheme} from './devtools/views/DevTools';
+import type {
+  DevToolsHook,
+  Handler,
+  ReactRenderer,
+  RendererID,
+  RendererInterface,
+} from './backend/types';
+
 import {
-  patch as patchConsole,
+  patchConsoleUsingWindowValues,
   registerRenderer as registerRendererWithConsole,
 } from './backend/console';
-
-import type {DevToolsHook} from 'react-devtools-shared/src/backend/types';
 
 declare var window: any;
 
@@ -21,7 +29,24 @@ export function installHook(target: any): DevToolsHook | null {
     return null;
   }
 
-  function detectReactBuildType(renderer) {
+  let targetConsole: Object = console;
+  let targetConsoleMethods: {[string]: $FlowFixMe} = {};
+  for (const method in console) {
+    targetConsoleMethods[method] = console[method];
+  }
+
+  function dangerous_setTargetConsoleForTesting(
+    targetConsoleForTesting: Object,
+  ): void {
+    targetConsole = targetConsoleForTesting;
+
+    targetConsoleMethods = ({}: {[string]: $FlowFixMe});
+    for (const method in targetConsole) {
+      targetConsoleMethods[method] = console[method];
+    }
+  }
+
+  function detectReactBuildType(renderer: ReactRenderer) {
     try {
       if (typeof renderer.version === 'string') {
         // React DOM Fiber (16+)
@@ -42,6 +67,7 @@ export function installHook(target: any): DevToolsHook | null {
         // it happens *outside* of the renderer injection. See `checkDCE` below.
       }
 
+      // $FlowFixMe[method-unbinding]
       const toString = Function.prototype.toString;
       if (renderer.Mount && renderer.Mount._renderNewRootComponent) {
         // React DOM Stack
@@ -128,6 +154,7 @@ export function installHook(target: any): DevToolsHook | null {
     // This runs for production versions of React.
     // Needs to be super safe.
     try {
+      // $FlowFixMe[method-unbinding]
       const toString = Function.prototype.toString;
       const code = toString.call(fn);
 
@@ -140,7 +167,7 @@ export function installHook(target: any): DevToolsHook | null {
 
         // Bonus: throw an exception hoping that it gets picked up by a reporting system.
         // Not synchronously so that it doesn't break the calling code.
-        setTimeout(function() {
+        setTimeout(function () {
           throw new Error(
             'React is running in production mode, but dead code ' +
               'elimination has not been applied. Read how to correctly ' +
@@ -152,9 +179,152 @@ export function installHook(target: any): DevToolsHook | null {
     } catch (err) {}
   }
 
+  // NOTE: KEEP IN SYNC with src/backend/utils.js
+  function formatWithStyles(
+    inputArgs: $ReadOnlyArray<any>,
+    style?: string,
+  ): $ReadOnlyArray<any> {
+    if (
+      inputArgs === undefined ||
+      inputArgs === null ||
+      inputArgs.length === 0 ||
+      // Matches any of %c but not %%c
+      (typeof inputArgs[0] === 'string' &&
+        inputArgs[0].match(/([^%]|^)(%c)/g)) ||
+      style === undefined
+    ) {
+      return inputArgs;
+    }
+
+    // Matches any of %(o|O|d|i|s|f), but not %%(o|O|d|i|s|f)
+    const REGEXP = /([^%]|^)((%%)*)(%([oOdisf]))/g;
+    if (typeof inputArgs[0] === 'string' && inputArgs[0].match(REGEXP)) {
+      return [`%c${inputArgs[0]}`, style, ...inputArgs.slice(1)];
+    } else {
+      const firstArg = inputArgs.reduce((formatStr, elem, i) => {
+        if (i > 0) {
+          formatStr += ' ';
+        }
+        switch (typeof elem) {
+          case 'string':
+          case 'boolean':
+          case 'symbol':
+            return (formatStr += '%s');
+          case 'number':
+            const formatting = Number.isInteger(elem) ? '%i' : '%f';
+            return (formatStr += formatting);
+          default:
+            return (formatStr += '%o');
+        }
+      }, '%c');
+      return [firstArg, style, ...inputArgs];
+    }
+  }
+
+  let unpatchFn = null;
+
+  // NOTE: KEEP IN SYNC with src/backend/console.js:patchForStrictMode
+  // This function hides or dims console logs during the initial double renderer
+  // in Strict Mode. We need this function because during initial render,
+  // React and DevTools are connecting and the renderer interface isn't avaiable
+  // and we want to be able to have consistent logging behavior for double logs
+  // during the initial renderer.
+  function patchConsoleForInitialRenderInStrictMode({
+    hideConsoleLogsInStrictMode,
+    browserTheme,
+  }: {
+    hideConsoleLogsInStrictMode: boolean,
+    browserTheme: BrowserTheme,
+  }) {
+    const overrideConsoleMethods = [
+      'error',
+      'group',
+      'groupCollapsed',
+      'info',
+      'log',
+      'trace',
+      'warn',
+    ];
+
+    if (unpatchFn !== null) {
+      // Don't patch twice.
+      return;
+    }
+
+    const originalConsoleMethods: {[string]: $FlowFixMe} = {};
+
+    unpatchFn = () => {
+      for (const method in originalConsoleMethods) {
+        try {
+          targetConsole[method] = originalConsoleMethods[method];
+        } catch (error) {}
+      }
+    };
+
+    overrideConsoleMethods.forEach(method => {
+      try {
+        const originalMethod = (originalConsoleMethods[method] = targetConsole[
+          method
+        ].__REACT_DEVTOOLS_STRICT_MODE_ORIGINAL_METHOD__
+          ? targetConsole[method].__REACT_DEVTOOLS_STRICT_MODE_ORIGINAL_METHOD__
+          : targetConsole[method]);
+
+        const overrideMethod = (...args: $ReadOnlyArray<any>) => {
+          if (!hideConsoleLogsInStrictMode) {
+            // Dim the text color of the double logs if we're not
+            // hiding them.
+            let color;
+            switch (method) {
+              case 'warn':
+                color =
+                  browserTheme === 'light'
+                    ? process.env.LIGHT_MODE_DIMMED_WARNING_COLOR
+                    : process.env.DARK_MODE_DIMMED_WARNING_COLOR;
+                break;
+              case 'error':
+                color =
+                  browserTheme === 'light'
+                    ? process.env.LIGHT_MODE_DIMMED_ERROR_COLOR
+                    : process.env.DARK_MODE_DIMMED_ERROR_COLOR;
+                break;
+              case 'log':
+              default:
+                color =
+                  browserTheme === 'light'
+                    ? process.env.LIGHT_MODE_DIMMED_LOG_COLOR
+                    : process.env.DARK_MODE_DIMMED_LOG_COLOR;
+                break;
+            }
+
+            if (color) {
+              originalMethod(...formatWithStyles(args, `color: ${color}`));
+            } else {
+              throw Error('Console color is not defined');
+            }
+          }
+        };
+
+        overrideMethod.__REACT_DEVTOOLS_STRICT_MODE_ORIGINAL_METHOD__ =
+          originalMethod;
+        originalMethod.__REACT_DEVTOOLS_STRICT_MODE_OVERRIDE_METHOD__ =
+          overrideMethod;
+
+        targetConsole[method] = overrideMethod;
+      } catch (error) {}
+    });
+  }
+
+  // NOTE: KEEP IN SYNC with src/backend/console.js:unpatchForStrictMode
+  function unpatchConsoleForInitialRenderInStrictMode() {
+    if (unpatchFn !== null) {
+      unpatchFn();
+      unpatchFn = null;
+    }
+  }
+
   let uidCounter = 0;
 
-  function inject(renderer) {
+  function inject(renderer: ReactRenderer) {
     const id = ++uidCounter;
     renderers.set(id, renderer);
 
@@ -164,21 +334,23 @@ export function installHook(target: any): DevToolsHook | null {
 
     // Patching the console enables DevTools to do a few useful things:
     // * Append component stacks to warnings and error messages
+    // * Disabling or marking logs during a double render in Strict Mode
     // * Disable logging during re-renders to inspect hooks (see inspectHooksOfFiber)
     //
     // For React Native, we intentionally patch early (during injection).
     // This provides React Native developers with components stacks even if they don't run DevTools.
+    //
     // This won't work for DOM though, since this entire file is eval'ed and inserted as a script tag.
-    // In that case, we'll patch later (when the frontend attaches).
+    // In that case, we'll only patch parts of the console that are needed during the first render
+    // and patch everything else later (when the frontend attaches).
     //
     // Don't patch in test environments because we don't want to interfere with Jest's own console overrides.
-    if (process.env.NODE_ENV !== 'test') {
+    //
+    // Note that because this function is inlined, this conditional check must only use static booleans.
+    // Otherwise the extension will throw with an undefined error.
+    // (See comments in the try/catch below for more context on inlining.)
+    if (!__TEST__ && !__EXTENSION__) {
       try {
-        const appendComponentStack =
-          window.__REACT_DEVTOOLS_APPEND_COMPONENT_STACK__ !== false;
-        const breakOnConsoleErrors =
-          window.__REACT_DEVTOOLS_BREAK_ON_CONSOLE_ERRORS__ === true;
-
         // The installHook() function is injected by being stringified in the browser,
         // so imports outside of this function do not get included.
         //
@@ -186,13 +358,8 @@ export function installHook(target: any): DevToolsHook | null {
         // but Webpack wraps imports with an object (e.g. _backend_console__WEBPACK_IMPORTED_MODULE_0__)
         // and the object itself will be undefined as well for the reasons mentioned above,
         // so we use try/catch instead.
-        if (appendComponentStack || breakOnConsoleErrors) {
-          registerRendererWithConsole(renderer);
-          patchConsole({
-            appendComponentStack,
-            breakOnConsoleErrors,
-          });
-        }
+        registerRendererWithConsole(renderer);
+        patchConsoleUsingWindowValues();
       } catch (error) {}
     }
 
@@ -204,26 +371,30 @@ export function installHook(target: any): DevToolsHook | null {
       hook.rendererInterfaces.set(id, rendererInterface);
     }
 
-    hook.emit('renderer', {id, renderer, reactBuildType});
+    hook.emit('renderer', {
+      id,
+      renderer,
+      reactBuildType,
+    });
 
     return id;
   }
 
   let hasDetectedBadDCE = false;
 
-  function sub(event, fn) {
+  function sub(event: string, fn: Handler) {
     hook.on(event, fn);
     return () => hook.off(event, fn);
   }
 
-  function on(event, fn) {
+  function on(event: string, fn: Handler) {
     if (!listeners[event]) {
       listeners[event] = [];
     }
     listeners[event].push(fn);
   }
 
-  function off(event, fn) {
+  function off(event: string, fn: Handler) {
     if (!listeners[event]) {
       return;
     }
@@ -236,13 +407,13 @@ export function installHook(target: any): DevToolsHook | null {
     }
   }
 
-  function emit(event, data) {
+  function emit(event: string, data: any) {
     if (listeners[event]) {
       listeners[event].map(fn => fn(data));
     }
   }
 
-  function getFiberRoots(rendererID) {
+  function getFiberRoots(rendererID: RendererID) {
     const roots = fiberRoots;
     if (!roots[rendererID]) {
       roots[rendererID] = new Set();
@@ -250,14 +421,18 @@ export function installHook(target: any): DevToolsHook | null {
     return roots[rendererID];
   }
 
-  function onCommitFiberUnmount(rendererID, fiber) {
+  function onCommitFiberUnmount(rendererID: RendererID, fiber: any) {
     const rendererInterface = rendererInterfaces.get(rendererID);
     if (rendererInterface != null) {
       rendererInterface.handleCommitFiberUnmount(fiber);
     }
   }
 
-  function onCommitFiberRoot(rendererID, root, priorityLevel) {
+  function onCommitFiberRoot(
+    rendererID: RendererID,
+    root: any,
+    priorityLevel: void | number,
+  ) {
     const mountedRoots = hook.getFiberRoots(rendererID);
     const current = root.current;
     const isKnownRoot = mountedRoots.has(root);
@@ -276,11 +451,78 @@ export function installHook(target: any): DevToolsHook | null {
     }
   }
 
+  function onPostCommitFiberRoot(rendererID: RendererID, root: any) {
+    const rendererInterface = rendererInterfaces.get(rendererID);
+    if (rendererInterface != null) {
+      rendererInterface.handlePostCommitFiberRoot(root);
+    }
+  }
+
+  function setStrictMode(rendererID: RendererID, isStrictMode: any) {
+    const rendererInterface = rendererInterfaces.get(rendererID);
+    if (rendererInterface != null) {
+      if (isStrictMode) {
+        rendererInterface.patchConsoleForStrictMode();
+      } else {
+        rendererInterface.unpatchConsoleForStrictMode();
+      }
+    } else {
+      // This should only happen during initial render in the extension before DevTools
+      // finishes its handshake with the injected renderer
+      if (isStrictMode) {
+        const hideConsoleLogsInStrictMode =
+          window.__REACT_DEVTOOLS_HIDE_CONSOLE_LOGS_IN_STRICT_MODE__ === true;
+        const browserTheme = window.__REACT_DEVTOOLS_BROWSER_THEME__;
+
+        patchConsoleForInitialRenderInStrictMode({
+          hideConsoleLogsInStrictMode,
+          browserTheme,
+        });
+      } else {
+        unpatchConsoleForInitialRenderInStrictMode();
+      }
+    }
+  }
+
+  type StackFrameString = string;
+
+  const openModuleRangesStack: Array<StackFrameString> = [];
+  const moduleRanges: Array<[StackFrameString, StackFrameString]> = [];
+
+  function getTopStackFrameString(error: Error): StackFrameString | null {
+    const frames = error.stack.split('\n');
+    const frame = frames.length > 1 ? frames[1] : null;
+    return frame;
+  }
+
+  function getInternalModuleRanges(): Array<
+    [StackFrameString, StackFrameString],
+  > {
+    return moduleRanges;
+  }
+
+  function registerInternalModuleStart(error: Error) {
+    const startStackFrame = getTopStackFrameString(error);
+    if (startStackFrame !== null) {
+      openModuleRangesStack.push(startStackFrame);
+    }
+  }
+
+  function registerInternalModuleStop(error: Error) {
+    if (openModuleRangesStack.length > 0) {
+      const startStackFrame = openModuleRangesStack.pop();
+      const stopStackFrame = getTopStackFrameString(error);
+      if (stopStackFrame !== null) {
+        moduleRanges.push([startStackFrame, stopStackFrame]);
+      }
+    }
+  }
+
   // TODO: More meaningful names for "rendererInterfaces" and "renderers".
-  const fiberRoots = {};
-  const rendererInterfaces = new Map();
-  const listeners = {};
-  const renderers = new Map();
+  const fiberRoots: {[RendererID]: Set<mixed>} = {};
+  const rendererInterfaces = new Map<RendererID, RendererInterface>();
+  const listeners: {[string]: Array<Handler>} = {};
+  const renderers = new Map<RendererID, ReactRenderer>();
 
   const hook: DevToolsHook = {
     rendererInterfaces,
@@ -304,14 +546,28 @@ export function installHook(target: any): DevToolsHook | null {
     checkDCE,
     onCommitFiberUnmount,
     onCommitFiberRoot,
+    onPostCommitFiberRoot,
+    setStrictMode,
+
+    // Schedule Profiler runtime helpers.
+    // These internal React modules to report their own boundaries
+    // which in turn enables the profiler to dim or filter internal frames.
+    getInternalModuleRanges,
+    registerInternalModuleStart,
+    registerInternalModuleStop,
   };
+
+  if (__TEST__) {
+    hook.dangerous_setTargetConsoleForTesting =
+      dangerous_setTargetConsoleForTesting;
+  }
 
   Object.defineProperty(
     target,
     '__REACT_DEVTOOLS_GLOBAL_HOOK__',
     ({
       // This property needs to be configurable for the test environment,
-      // else we won't be able to delete and recreate it beween tests.
+      // else we won't be able to delete and recreate it between tests.
       configurable: __DEV__,
       enumerable: false,
       get() {

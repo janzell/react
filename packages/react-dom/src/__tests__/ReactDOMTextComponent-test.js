@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -283,5 +283,27 @@ describe('ReactDOMTextComponent', () => {
     el.normalize();
     ReactDOM.render(<div />, el);
     expect(el.innerHTML).toBe('<div></div>');
+  });
+
+  it('throws for Temporal-like text nodes', () => {
+    const el = document.createElement('div');
+    class TemporalLike {
+      valueOf() {
+        // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
+        // See https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
+        throw new TypeError('prod message');
+      }
+      toString() {
+        return '2020-01-01';
+      }
+    }
+    expect(() =>
+      ReactDOM.render(<div>{new TemporalLike()}</div>, el),
+    ).toThrowError(
+      new Error(
+        'Objects are not valid as a React child (found: object with keys {}).' +
+          ' If you meant to render a collection of children, use an array instead.',
+      ),
+    );
   });
 });

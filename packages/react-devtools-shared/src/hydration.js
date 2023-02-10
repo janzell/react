@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -16,21 +16,21 @@ import {
   setInObject,
 } from './utils';
 
-import type {DehydratedData} from 'react-devtools-shared/src/devtools/views/Components/types';
+import type {DehydratedData} from './devtools/views/Components/types';
 
 export const meta = {
-  inspectable: Symbol('inspectable'),
-  inspected: Symbol('inspected'),
-  name: Symbol('name'),
-  preview_long: Symbol('preview_long'),
-  preview_short: Symbol('preview_short'),
-  readonly: Symbol('readonly'),
-  size: Symbol('size'),
-  type: Symbol('type'),
-  unserializable: Symbol('unserializable'),
+  inspectable: (Symbol('inspectable'): symbol),
+  inspected: (Symbol('inspected'): symbol),
+  name: (Symbol('name'): symbol),
+  preview_long: (Symbol('preview_long'): symbol),
+  preview_short: (Symbol('preview_short'): symbol),
+  readonly: (Symbol('readonly'): symbol),
+  size: (Symbol('size'): symbol),
+  type: (Symbol('type'): symbol),
+  unserializable: (Symbol('unserializable'): symbol),
 };
 
-export type Dehydrated = {|
+export type Dehydrated = {
   inspectable: boolean,
   name: string | null,
   preview_long: string | null,
@@ -38,7 +38,7 @@ export type Dehydrated = {|
   readonly?: boolean,
   size?: number,
   type: string,
-|};
+};
 
 // Typed arrays and other complex iteratable objects (e.g. Map, Set, ImmutableJS) need special handling.
 // These objects can't be serialized without losing type information,
@@ -124,13 +124,7 @@ export function dehydrate(
   path: Array<string | number>,
   isPathAllowed: (path: Array<string | number>) => boolean,
   level?: number = 0,
-):
-  | string
-  | Dehydrated
-  | Unserializable
-  | Array<Dehydrated>
-  | Array<Unserializable>
-  | {[key: string]: string | Dehydrated | Unserializable, ...} {
+): $PropertyType<DehydratedData, 'data'> {
   const type = getDataType(data);
 
   let isPathAllowedCheck;
@@ -160,7 +154,12 @@ export function dehydrate(
       };
 
     case 'string':
-      return data.length <= 500 ? data : data.slice(0, 500) + '...';
+      isPathAllowedCheck = isPathAllowed(path);
+      if (isPathAllowedCheck) {
+        return data;
+      } else {
+        return data.length <= 500 ? data : data.slice(0, 500) + '...';
+      }
 
     case 'bigint':
       cleaned.push(path);
@@ -243,28 +242,37 @@ export function dehydrate(
               : data.constructor.name,
         };
 
-        if (typeof data[Symbol.iterator]) {
-          // TRICKY
-          // Don't use [...spread] syntax for this purpose.
-          // This project uses @babel/plugin-transform-spread in "loose" mode which only works with Array values.
-          // Other types (e.g. typed arrays, Sets) will not spread correctly.
-          Array.from(data).forEach(
-            (item, i) =>
-              (unserializableValue[i] = dehydrate(
-                item,
-                cleaned,
-                unserializable,
-                path.concat([i]),
-                isPathAllowed,
-                isPathAllowedCheck ? 1 : level + 1,
-              )),
-          );
-        }
+        // TRICKY
+        // Don't use [...spread] syntax for this purpose.
+        // This project uses @babel/plugin-transform-spread in "loose" mode which only works with Array values.
+        // Other types (e.g. typed arrays, Sets) will not spread correctly.
+        Array.from(data).forEach(
+          (item, i) =>
+            // $FlowFixMe[prop-missing] Unserializable doesn't have an index signature
+            (unserializableValue[i] = dehydrate(
+              item,
+              cleaned,
+              unserializable,
+              path.concat([i]),
+              isPathAllowed,
+              isPathAllowedCheck ? 1 : level + 1,
+            )),
+        );
 
         unserializable.push(path);
 
         return unserializableValue;
       }
+
+    case 'opaque_iterator':
+      cleaned.push(path);
+      return {
+        inspectable: false,
+        preview_short: formatDataForPreview(data, false),
+        preview_long: formatDataForPreview(data, true),
+        name: data[Symbol.toStringTag],
+        type,
+      };
 
     case 'date':
       cleaned.push(path);
@@ -291,7 +299,9 @@ export function dehydrate(
       if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
         return createDehydrated(type, true, data, cleaned, path);
       } else {
-        const object = {};
+        const object: {
+          [string]: $PropertyType<DehydratedData, 'data'>,
+        } = {};
         getAllEnumerableKeys(data).forEach(key => {
           const name = key.toString();
           object[name] = dehydrate(
@@ -373,7 +383,9 @@ export function hydrate(
 
     const value = parent[last];
 
-    if (value.type === 'infinity') {
+    if (!value) {
+      return;
+    } else if (value.type === 'infinity') {
       parent[last] = Infinity;
     } else if (value.type === 'nan') {
       parent[last] = NaN;
@@ -381,7 +393,7 @@ export function hydrate(
       parent[last] = undefined;
     } else {
       // Replace the string keys with Symbols so they're non-enumerable.
-      const replaced: {[key: Symbol]: boolean | string, ...} = {};
+      const replaced: {[key: symbol]: boolean | string, ...} = {};
       replaced[meta.inspectable] = !!value.inspectable;
       replaced[meta.inspected] = false;
       replaced[meta.name] = value.name;
@@ -417,41 +429,49 @@ export function hydrate(
 
 function upgradeUnserializable(destination: Object, source: Object) {
   Object.defineProperties(destination, {
+    // $FlowFixMe[invalid-computed-prop]
     [meta.inspected]: {
       configurable: true,
       enumerable: false,
       value: !!source.inspected,
     },
+    // $FlowFixMe[invalid-computed-prop]
     [meta.name]: {
       configurable: true,
       enumerable: false,
       value: source.name,
     },
+    // $FlowFixMe[invalid-computed-prop]
     [meta.preview_long]: {
       configurable: true,
       enumerable: false,
       value: source.preview_long,
     },
+    // $FlowFixMe[invalid-computed-prop]
     [meta.preview_short]: {
       configurable: true,
       enumerable: false,
       value: source.preview_short,
     },
+    // $FlowFixMe[invalid-computed-prop]
     [meta.size]: {
       configurable: true,
       enumerable: false,
       value: source.size,
     },
+    // $FlowFixMe[invalid-computed-prop]
     [meta.readonly]: {
       configurable: true,
       enumerable: false,
       value: !!source.readonly,
     },
+    // $FlowFixMe[invalid-computed-prop]
     [meta.type]: {
       configurable: true,
       enumerable: false,
       value: source.type,
     },
+    // $FlowFixMe[invalid-computed-prop]
     [meta.unserializable]: {
       configurable: true,
       enumerable: false,

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,9 +7,10 @@
 
 import Transform from 'art/core/transform';
 import Mode from 'art/modes/current';
-import invariant from 'shared/invariant';
 
 import {TYPES, EVENT_TYPES, childrenAsString} from './ReactARTInternals';
+
+import {DefaultEventPriority} from 'react-reconciler/src/ReactEventPriorities';
 
 const pooledTransform = new Transform();
 
@@ -241,12 +242,14 @@ export * from 'react-reconciler/src/ReactFiberHostConfigWithNoPersistence';
 export * from 'react-reconciler/src/ReactFiberHostConfigWithNoHydration';
 export * from 'react-reconciler/src/ReactFiberHostConfigWithNoScopes';
 export * from 'react-reconciler/src/ReactFiberHostConfigWithNoTestSelectors';
+export * from 'react-reconciler/src/ReactFiberHostConfigWithNoMicrotasks';
+export * from 'react-reconciler/src/ReactFiberHostConfigWithNoResources';
+export * from 'react-reconciler/src/ReactFiberHostConfigWithNoSingletons';
 
 export function appendInitialChild(parentInstance, child) {
   if (typeof child === 'string') {
     // Noop for string children of Text (eg <Text>{'foo'}{'bar'}</Text>)
-    invariant(false, 'Text children should already be flattened.');
-    return;
+    throw new Error('Text children should already be flattened.');
   }
 
   child.inject(parentInstance);
@@ -279,7 +282,9 @@ export function createInstance(type, props, internalInstanceHandle) {
       break;
   }
 
-  invariant(instance, 'ReactART does not support the type "%s"', type);
+  if (!instance) {
+    throw new Error(`ReactART does not support the type "${type}"`);
+  }
 
   instance._applyProps(instance, props);
 
@@ -337,6 +342,10 @@ export function shouldSetTextContent(type, props) {
   );
 }
 
+export function getCurrentEventPriority() {
+  return DefaultEventPriority;
+}
+
 // The ART renderer is secondary to the React DOM renderer.
 export const isPrimaryRenderer = false;
 
@@ -360,18 +369,18 @@ export function appendChildToContainer(parentInstance, child) {
 }
 
 export function insertBefore(parentInstance, child, beforeChild) {
-  invariant(
-    child !== beforeChild,
-    'ReactART: Can not insert node before itself',
-  );
+  if (child === beforeChild) {
+    throw new Error('ReactART: Can not insert node before itself');
+  }
+
   child.injectBefore(beforeChild);
 }
 
 export function insertInContainerBefore(parentInstance, child, beforeChild) {
-  invariant(
-    child !== beforeChild,
-    'ReactART: Can not insert node before itself',
-  );
+  if (child === beforeChild) {
+    throw new Error('ReactART: Can not insert node before itself');
+  }
+
   child.injectBefore(beforeChild);
 }
 
@@ -425,49 +434,11 @@ export function clearContainer(container) {
   // TODO Implement this
 }
 
-export function getFundamentalComponentInstance(fundamentalInstance) {
-  throw new Error('Not yet implemented.');
-}
-
-export function mountFundamentalComponent(fundamentalInstance) {
-  throw new Error('Not yet implemented.');
-}
-
-export function shouldUpdateFundamentalComponent(fundamentalInstance) {
-  throw new Error('Not yet implemented.');
-}
-
-export function updateFundamentalComponent(fundamentalInstance) {
-  throw new Error('Not yet implemented.');
-}
-
-export function unmountFundamentalComponent(fundamentalInstance) {
-  throw new Error('Not yet implemented.');
-}
-
 export function getInstanceFromNode(node) {
-  throw new Error('Not yet implemented.');
+  throw new Error('Not implemented.');
 }
 
-export function isOpaqueHydratingObject(value: mixed): boolean {
-  throw new Error('Not yet implemented');
-}
-
-export function makeOpaqueHydratingObject(
-  attemptToReadValue: () => void,
-): OpaqueIDType {
-  throw new Error('Not yet implemented.');
-}
-
-export function makeClientId(): OpaqueIDType {
-  throw new Error('Not yet implemented');
-}
-
-export function makeClientIdInDEV(warnOnAccessInDEV: () => void): OpaqueIDType {
-  throw new Error('Not yet implemented');
-}
-
-export function beforeActiveInstanceBlur() {
+export function beforeActiveInstanceBlur(internalInstanceHandle: Object) {
   // noop
 }
 
@@ -476,5 +447,23 @@ export function afterActiveInstanceBlur() {
 }
 
 export function preparePortalMount(portalInstance: any): void {
+  // noop
+}
+
+// eslint-disable-next-line no-undef
+export function detachDeletedInstance(node: Instance): void {
+  // noop
+}
+
+export function requestPostPaintCallback(callback: (time: number) => void) {
+  // noop
+}
+
+// eslint-disable-next-line no-undef
+export function prepareRendererToRender(container: Container): void {
+  // noop
+}
+
+export function resetRendererAfterRender(): void {
   // noop
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,11 +7,15 @@
  * @flow
  */
 
+import type {CallServerCallback} from './ReactFlightClient';
 import type {Response} from './ReactFlightClientHostConfigStream';
+import type {BundlerConfig} from './ReactFlightClientHostConfig';
 
 import {
+  resolveModule,
   resolveModel,
-  resolveError,
+  resolveErrorProd,
+  resolveErrorDev,
   createResponse as createResponseBase,
   parseModelString,
   parseModelTuple,
@@ -30,26 +34,36 @@ function processFullRow(response: Response, row: string): void {
   if (row === '') {
     return;
   }
-  const tag = row[0];
+  const colon = row.indexOf(':', 0);
+  const id = parseInt(row.substring(0, colon), 16);
+  const tag = row[colon + 1];
+  // When tags that are not text are added, check them here before
+  // parsing the row as text.
+  // switch (tag) {
+  // }
   switch (tag) {
-    case 'J': {
-      const colon = row.indexOf(':', 1);
-      const id = parseInt(row.substring(1, colon), 16);
-      const json = row.substring(colon + 1);
-      resolveModel(response, id, json);
+    case 'I': {
+      resolveModule(response, id, row.substring(colon + 2));
       return;
     }
     case 'E': {
-      const colon = row.indexOf(':', 1);
-      const id = parseInt(row.substring(1, colon), 16);
-      const json = row.substring(colon + 1);
-      const errorInfo = JSON.parse(json);
-      resolveError(response, id, errorInfo.message, errorInfo.stack);
+      const errorInfo = JSON.parse(row.substring(colon + 2));
+      if (__DEV__) {
+        resolveErrorDev(
+          response,
+          id,
+          errorInfo.digest,
+          errorInfo.message,
+          errorInfo.stack,
+        );
+      } else {
+        resolveErrorProd(response, id, errorInfo.digest);
+      }
       return;
     }
     default: {
-      // Assume this is the root model.
-      resolveModel(response, 0, row);
+      // We assume anything else is JSON.
+      resolveModel(response, id, row.substring(colon + 1));
       return;
     }
   }
@@ -93,10 +107,11 @@ export function processBinaryChunk(
 }
 
 function createFromJSONCallback(response: Response) {
-  return function(key: string, value: JSONValue) {
+  // $FlowFixMe[missing-this-annot]
+  return function (key: string, value: JSONValue) {
     if (typeof value === 'string') {
       // We can't use .bind here because we need the "this" value.
-      return parseModelString(response, this, value);
+      return parseModelString(response, this, key, value);
     }
     if (typeof value === 'object' && value !== null) {
       return parseModelTuple(response, value);
@@ -105,11 +120,14 @@ function createFromJSONCallback(response: Response) {
   };
 }
 
-export function createResponse(): Response {
+export function createResponse(
+  bundlerConfig: BundlerConfig,
+  callServer: void | CallServerCallback,
+): Response {
   // NOTE: CHECK THE COMPILER OUTPUT EACH TIME YOU CHANGE THIS.
   // It should be inlined to one object literal but minor changes can break it.
   const stringDecoder = supportsBinaryStreams ? createStringDecoder() : null;
-  const response: any = createResponseBase();
+  const response: any = createResponseBase(bundlerConfig, callServer);
   response._partialRow = '';
   if (supportsBinaryStreams) {
     response._stringDecoder = stringDecoder;
@@ -119,4 +137,4 @@ export function createResponse(): Response {
   return response;
 }
 
-export {reportGlobalError, close} from './ReactFlightClient';
+export {reportGlobalError, getRoot, close} from './ReactFlightClient';

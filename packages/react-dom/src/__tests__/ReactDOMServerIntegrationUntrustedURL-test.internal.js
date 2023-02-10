@@ -1,10 +1,11 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 /* eslint-disable no-script-url */
@@ -149,7 +150,7 @@ function runTests(itRenders, itRejectsRendering, expectToReject) {
 
 describe('ReactDOMServerIntegration - Untrusted URLs', () => {
   function initModules() {
-    jest.resetModuleRegistry();
+    jest.resetModules();
     React = require('react');
     ReactDOM = require('react-dom');
     ReactDOMServer = require('react-dom/server');
@@ -181,7 +182,7 @@ describe('ReactDOMServerIntegration - Untrusted URLs', () => {
 
 describe('ReactDOMServerIntegration - Untrusted URLs - disableJavaScriptURLs', () => {
   function initModules() {
-    jest.resetModuleRegistry();
+    jest.resetModules();
     const ReactFeatureFlags = require('shared/ReactFeatureFlags');
     ReactFeatureFlags.disableJavaScriptURLs = true;
 
@@ -241,6 +242,11 @@ describe('ReactDOMServerIntegration - Untrusted URLs - disableJavaScriptURLs', (
       // TODO: It would be good if we only called toString once for
       // consistency but the code structure makes that hard right now.
       expectedToStringCalls = 2;
+    }
+    if (__DEV__) {
+      // Checking for string coercion problems results in double the
+      // toString calls in DEV
+      expectedToStringCalls *= 2;
     }
 
     let toStringCalls = 0;

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -22,7 +22,7 @@ describe('ReactHooksInspectionIntegration', () => {
     React = require('react');
     ReactTestRenderer = require('react-test-renderer');
     Scheduler = require('scheduler');
-    act = ReactTestRenderer.unstable_concurrentAct;
+    act = require('jest-react').act;
     ReactDebugTools = require('react-debug-tools');
   });
 
@@ -58,10 +58,8 @@ describe('ReactHooksInspectionIntegration', () => {
       },
     ]);
 
-    const {
-      onMouseDown: setStateA,
-      onMouseUp: setStateB,
-    } = renderer.root.findByType('div').props;
+    const {onMouseDown: setStateA, onMouseUp: setStateB} =
+      renderer.root.findByType('div').props;
 
     act(() => setStateA('Hi'));
 
@@ -268,6 +266,182 @@ describe('ReactHooksInspectionIntegration', () => {
     ]);
   });
 
+  it('should inspect the current state of all stateful hooks, including useInsertionEffect', () => {
+    const useInsertionEffect = React.useInsertionEffect;
+    const outsideRef = React.createRef();
+    function effect() {}
+    function Foo(props) {
+      const [state1, setState] = React.useState('a');
+      const [state2, dispatch] = React.useReducer((s, a) => a.value, 'b');
+      const ref = React.useRef('c');
+
+      useInsertionEffect(effect);
+      React.useLayoutEffect(effect);
+      React.useEffect(effect);
+
+      React.useImperativeHandle(
+        outsideRef,
+        () => {
+          // Return a function so that jest treats them as non-equal.
+          return function Instance() {};
+        },
+        [],
+      );
+
+      React.useMemo(() => state1 + state2, [state1]);
+
+      function update() {
+        act(() => {
+          setState('A');
+        });
+        act(() => {
+          dispatch({value: 'B'});
+        });
+        ref.current = 'C';
+      }
+      const memoizedUpdate = React.useCallback(update, []);
+      return (
+        <div onClick={memoizedUpdate}>
+          {state1} {state2}
+        </div>
+      );
+    }
+    let renderer;
+    act(() => {
+      renderer = ReactTestRenderer.create(<Foo prop="prop" />);
+    });
+
+    let childFiber = renderer.root.findByType(Foo)._currentFiber();
+
+    const {onClick: updateStates} = renderer.root.findByType('div').props;
+
+    let tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
+    expect(tree).toEqual([
+      {
+        isStateEditable: true,
+        id: 0,
+        name: 'State',
+        value: 'a',
+        subHooks: [],
+      },
+      {
+        isStateEditable: true,
+        id: 1,
+        name: 'Reducer',
+        value: 'b',
+        subHooks: [],
+      },
+      {isStateEditable: false, id: 2, name: 'Ref', value: 'c', subHooks: []},
+      {
+        isStateEditable: false,
+        id: 3,
+        name: 'InsertionEffect',
+        value: effect,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 4,
+        name: 'LayoutEffect',
+        value: effect,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 5,
+        name: 'Effect',
+        value: effect,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 6,
+        name: 'ImperativeHandle',
+        value: outsideRef.current,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 7,
+        name: 'Memo',
+        value: 'ab',
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 8,
+        name: 'Callback',
+        value: updateStates,
+        subHooks: [],
+      },
+    ]);
+
+    updateStates();
+
+    childFiber = renderer.root.findByType(Foo)._currentFiber();
+    tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
+
+    expect(tree).toEqual([
+      {
+        isStateEditable: true,
+        id: 0,
+        name: 'State',
+        value: 'A',
+        subHooks: [],
+      },
+      {
+        isStateEditable: true,
+        id: 1,
+        name: 'Reducer',
+        value: 'B',
+        subHooks: [],
+      },
+      {isStateEditable: false, id: 2, name: 'Ref', value: 'C', subHooks: []},
+      {
+        isStateEditable: false,
+        id: 3,
+        name: 'InsertionEffect',
+        value: effect,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 4,
+        name: 'LayoutEffect',
+        value: effect,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 5,
+        name: 'Effect',
+        value: effect,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 6,
+        name: 'ImperativeHandle',
+        value: outsideRef.current,
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 7,
+        name: 'Memo',
+        value: 'Ab',
+        subHooks: [],
+      },
+      {
+        isStateEditable: false,
+        id: 8,
+        name: 'Callback',
+        value: updateStates,
+        subHooks: [],
+      },
+    ]);
+  });
+
   it('should inspect the value of the current provider in useContext', () => {
     const MyContext = React.createContext('default');
     function Foo(props) {
@@ -293,8 +467,8 @@ describe('ReactHooksInspectionIntegration', () => {
   });
 
   it('should inspect forwardRef', () => {
-    const obj = function() {};
-    const Foo = React.forwardRef(function(props, ref) {
+    const obj = function () {};
+    const Foo = React.forwardRef(function (props, ref) {
       React.useImperativeHandle(ref, () => obj);
       return <div />;
     });
@@ -366,11 +540,11 @@ describe('ReactHooksInspectionIntegration', () => {
     ]);
   });
 
-  // @gate experimental
   it('should support composite useTransition hook', () => {
     function Foo(props) {
-      React.unstable_useTransition();
+      React.useTransition();
       const memoizedValue = React.useMemo(() => 'hello', []);
+      React.useMemo(() => 'not used', []);
       return <div>{memoizedValue}</div>;
     }
     const renderer = ReactTestRenderer.create(<Foo />);
@@ -391,17 +565,24 @@ describe('ReactHooksInspectionIntegration', () => {
         value: 'hello',
         subHooks: [],
       },
+      {
+        id: 2,
+        isStateEditable: false,
+        name: 'Memo',
+        value: 'not used',
+        subHooks: [],
+      },
     ]);
   });
 
-  // @gate experimental
-  it('should support composite useDeferredValue hook', () => {
+  it('should support useDeferredValue hook', () => {
     function Foo(props) {
-      React.unstable_useDeferredValue('abc', {
+      React.useDeferredValue('abc', {
         timeoutMs: 500,
       });
-      const [state] = React.useState(() => 'hello', []);
-      return <div>{state}</div>;
+      const memoizedValue = React.useMemo(() => 1, []);
+      React.useMemo(() => 2, []);
+      return <div>{memoizedValue}</div>;
     }
     const renderer = ReactTestRenderer.create(<Foo />);
     const childFiber = renderer.root.findByType(Foo)._currentFiber();
@@ -416,19 +597,25 @@ describe('ReactHooksInspectionIntegration', () => {
       },
       {
         id: 1,
-        isStateEditable: true,
-        name: 'State',
-        value: 'hello',
+        isStateEditable: false,
+        name: 'Memo',
+        value: 1,
+        subHooks: [],
+      },
+      {
+        id: 2,
+        isStateEditable: false,
+        name: 'Memo',
+        value: 2,
         subHooks: [],
       },
     ]);
   });
 
-  // @gate experimental
-  it('should support composite useOpaqueIdentifier hook', () => {
+  it('should support useId hook', () => {
     function Foo(props) {
-      const id = React.unstable_useOpaqueIdentifier();
-      const [state] = React.useState(() => 'hello', []);
+      const id = React.useId();
+      const [state] = React.useState('hello');
       return <div id={id}>{state}</div>;
     }
 
@@ -440,40 +627,8 @@ describe('ReactHooksInspectionIntegration', () => {
 
     expect(tree[0].id).toEqual(0);
     expect(tree[0].isStateEditable).toEqual(false);
-    expect(tree[0].name).toEqual('OpaqueIdentifier');
-    expect((tree[0].value + '').startsWith('c_')).toBe(true);
-
-    expect(tree[1]).toEqual({
-      id: 1,
-      isStateEditable: true,
-      name: 'State',
-      value: 'hello',
-      subHooks: [],
-    });
-  });
-
-  // @gate experimental
-  it('should support composite useOpaqueIdentifier hook in concurrent mode', () => {
-    function Foo(props) {
-      const id = React.unstable_useOpaqueIdentifier();
-      const [state] = React.useState(() => 'hello', []);
-      return <div id={id}>{state}</div>;
-    }
-
-    const renderer = ReactTestRenderer.create(<Foo />, {
-      unstable_isConcurrent: true,
-    });
-    expect(Scheduler).toFlushWithoutYielding();
-
-    const childFiber = renderer.root.findByType(Foo)._currentFiber();
-    const tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
-
-    expect(tree.length).toEqual(2);
-
-    expect(tree[0].id).toEqual(0);
-    expect(tree[0].isStateEditable).toEqual(false);
-    expect(tree[0].name).toEqual('OpaqueIdentifier');
-    expect((tree[0].value + '').startsWith('c_')).toBe(true);
+    expect(tree[0].name).toEqual('Id');
+    expect(String(tree[0].value).startsWith(':r')).toBe(true);
 
     expect(tree[1]).toEqual({
       id: 1,
@@ -741,7 +896,11 @@ describe('ReactHooksInspectionIntegration', () => {
 
     await LazyFoo;
 
-    Scheduler.unstable_flushAll();
+    expect(() => {
+      Scheduler.unstable_flushAll();
+    }).toErrorDev([
+      'Foo: Support for defaultProps will be removed from function components in a future major release. Use JavaScript default parameters instead.',
+    ]);
 
     const childFiber = renderer.root._currentFiber();
     const tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
@@ -779,16 +938,26 @@ describe('ReactHooksInspectionIntegration', () => {
 
     const renderer = ReactTestRenderer.create(<Foo />);
     const childFiber = renderer.root._currentFiber();
-    expect(() => {
+
+    let didCatch = false;
+
+    try {
       ReactDebugTools.inspectHooksOfFiber(childFiber, FakeDispatcherRef);
-    }).toThrow(
-      'Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for' +
-        ' one of the following reasons:\n' +
-        '1. You might have mismatching versions of React and the renderer (such as React DOM)\n' +
-        '2. You might be breaking the Rules of Hooks\n' +
-        '3. You might have more than one copy of React in the same app\n' +
-        'See https://reactjs.org/link/invalid-hook-call for tips about how to debug and fix this problem.',
-    );
+    } catch (error) {
+      expect(error.message).toBe('Error rendering inspected component');
+      expect(error.cause).toBeInstanceOf(Error);
+      expect(error.cause.message).toBe(
+        'Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for' +
+          ' one of the following reasons:\n' +
+          '1. You might have mismatching versions of React and the renderer (such as React DOM)\n' +
+          '2. You might be breaking the Rules of Hooks\n' +
+          '3. You might have more than one copy of React in the same app\n' +
+          'See https://reactjs.org/link/invalid-hook-call for tips about how to debug and fix this problem.',
+      );
+      didCatch = true;
+    }
+    // avoid false positive if no error was thrown at all
+    expect(didCatch).toBe(true);
 
     expect(getterCalls).toBe(1);
     expect(setterCalls).toHaveLength(2);
@@ -797,7 +966,7 @@ describe('ReactHooksInspectionIntegration', () => {
   });
 
   // This test case is based on an open source bug report:
-  // facebookincubator/redux-react-hook/issues/34#issuecomment-466693787
+  // https://github.com/facebookincubator/redux-react-hook/issues/34#issuecomment-466693787
   it('should properly advance the current hook for useContext', () => {
     const MyContext = React.createContext(1);
 
@@ -846,37 +1015,89 @@ describe('ReactHooksInspectionIntegration', () => {
     ]);
   });
 
-  if (__EXPERIMENTAL__) {
-    it('should support composite useMutableSource hook', () => {
-      const mutableSource = React.unstable_createMutableSource({}, () => 1);
-      function Foo(props) {
-        React.unstable_useMutableSource(
-          mutableSource,
-          () => 'snapshot',
-          () => {},
-        );
-        React.useMemo(() => 'memo', []);
-        return <div />;
-      }
-      const renderer = ReactTestRenderer.create(<Foo />);
-      const childFiber = renderer.root.findByType(Foo)._currentFiber();
-      const tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
-      expect(tree).toEqual([
-        {
-          id: 0,
-          isStateEditable: false,
-          name: 'MutableSource',
-          value: 'snapshot',
-          subHooks: [],
-        },
-        {
-          id: 1,
-          isStateEditable: false,
-          name: 'Memo',
-          value: 'memo',
-          subHooks: [],
-        },
-      ]);
-    });
-  }
+  // @gate enableUseMutableSource
+  it('should support composite useMutableSource hook', () => {
+    const createMutableSource =
+      React.createMutableSource || React.unstable_createMutableSource;
+    const useMutableSource =
+      React.useMutableSource || React.unstable_useMutableSource;
+
+    const mutableSource = createMutableSource({}, () => 1);
+    function Foo(props) {
+      useMutableSource(
+        mutableSource,
+        () => 'snapshot',
+        () => {},
+      );
+      React.useMemo(() => 'memo', []);
+      React.useMemo(() => 'not used', []);
+      return <div />;
+    }
+    const renderer = ReactTestRenderer.create(<Foo />);
+    const childFiber = renderer.root.findByType(Foo)._currentFiber();
+    const tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
+    expect(tree).toEqual([
+      {
+        id: 0,
+        isStateEditable: false,
+        name: 'MutableSource',
+        value: 'snapshot',
+        subHooks: [],
+      },
+      {
+        id: 1,
+        isStateEditable: false,
+        name: 'Memo',
+        value: 'memo',
+        subHooks: [],
+      },
+      {
+        id: 2,
+        isStateEditable: false,
+        name: 'Memo',
+        value: 'not used',
+        subHooks: [],
+      },
+    ]);
+  });
+
+  it('should support composite useSyncExternalStore hook', () => {
+    const useSyncExternalStore = React.useSyncExternalStore;
+    function Foo() {
+      const value = useSyncExternalStore(
+        () => () => {},
+        () => 'snapshot',
+      );
+      React.useMemo(() => 'memo', []);
+      React.useMemo(() => 'not used', []);
+      return value;
+    }
+
+    const renderer = ReactTestRenderer.create(<Foo />);
+    const childFiber = renderer.root.findByType(Foo)._currentFiber();
+    const tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
+    expect(tree).toEqual([
+      {
+        id: 0,
+        isStateEditable: false,
+        name: 'SyncExternalStore',
+        value: 'snapshot',
+        subHooks: [],
+      },
+      {
+        id: 1,
+        isStateEditable: false,
+        name: 'Memo',
+        value: 'memo',
+        subHooks: [],
+      },
+      {
+        id: 2,
+        isStateEditable: false,
+        name: 'Memo',
+        value: 'not used',
+        subHooks: [],
+      },
+    ]);
+  });
 });

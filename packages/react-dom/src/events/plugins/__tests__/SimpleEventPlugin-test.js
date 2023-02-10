@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -9,10 +9,12 @@
 
 'use strict';
 
-describe('SimpleEventPlugin', function() {
+describe('SimpleEventPlugin', function () {
   let React;
   let ReactDOM;
+  let ReactDOMClient;
   let Scheduler;
+  let act;
 
   let onClick;
   let container;
@@ -34,10 +36,11 @@ describe('SimpleEventPlugin', function() {
     return element;
   }
 
-  beforeEach(function() {
+  beforeEach(function () {
     jest.resetModules();
     React = require('react');
     ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     Scheduler = require('scheduler');
 
     onClick = jest.fn();
@@ -50,12 +53,12 @@ describe('SimpleEventPlugin', function() {
     }
   });
 
-  it('A non-interactive tags click when disabled', function() {
+  it('A non-interactive tags click when disabled', function () {
     const element = <div onClick={onClick} />;
     expectClickThru(mounted(element));
   });
 
-  it('A non-interactive tags clicks bubble when disabled', function() {
+  it('A non-interactive tags clicks bubble when disabled', function () {
     const element = mounted(
       <div onClick={onClick}>
         <div />
@@ -66,7 +69,7 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('does not register a click when clicking a child of a disabled element', function() {
+  it('does not register a click when clicking a child of a disabled element', function () {
     const element = mounted(
       <button onClick={onClick} disabled={true}>
         <span />
@@ -78,7 +81,7 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(0);
   });
 
-  it('triggers click events for children of disabled elements', function() {
+  it('triggers click events for children of disabled elements', function () {
     const element = mounted(
       <button disabled={true}>
         <span onClick={onClick} />
@@ -90,7 +93,7 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers parent captured click events when target is a child of a disabled elements', function() {
+  it('triggers parent captured click events when target is a child of a disabled elements', function () {
     const element = mounted(
       <div onClickCapture={onClick}>
         <button disabled={true}>
@@ -104,7 +107,7 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers captured click events for children of disabled elements', function() {
+  it('triggers captured click events for children of disabled elements', function () {
     const element = mounted(
       <button disabled={true}>
         <span onClickCapture={onClick} />
@@ -116,8 +119,8 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  ['button', 'input', 'select', 'textarea'].forEach(function(tagName) {
-    describe(tagName, function() {
+  ['button', 'input', 'select', 'textarea'].forEach(function (tagName) {
+    describe(tagName, function () {
       it('should forward clicks when it starts out not disabled', () => {
         const element = React.createElement(tagName, {
           onClick: onClick,
@@ -234,13 +237,15 @@ describe('SimpleEventPlugin', function() {
 
       React = require('react');
       ReactDOM = require('react-dom');
+      ReactDOMClient = require('react-dom/client');
       Scheduler = require('scheduler');
+
+      act = require('jest-react').act;
     });
 
-    // @gate experimental
-    it('flushes pending interactive work before extracting event handler', () => {
+    it('flushes pending interactive work before exiting event handler', async () => {
       container = document.createElement('div');
-      const root = ReactDOM.unstable_createRoot(container);
+      const root = ReactDOMClient.createRoot(container);
       document.body.appendChild(container);
 
       let button;
@@ -286,21 +291,18 @@ describe('SimpleEventPlugin', function() {
       }
 
       // Click the button to trigger the side-effect
-      click();
+      await act(async () => click());
       expect(Scheduler).toHaveYielded([
         // The handler fired
         'Side-effect',
-        // but the component did not re-render yet, because it's async
+        // The component re-rendered synchronously, even in concurrent mode.
+        'render button: disabled',
       ]);
 
       // Click the button again
       click();
       expect(Scheduler).toHaveYielded([
-        // Before handling this second click event, the previous interactive
-        // update is flushed
-        'render button: disabled',
-        // The event handler was removed from the button, so there's no second
-        // side-effect
+        // The event handler was removed from the button, so there's no effect.
       ]);
 
       // The handler should not fire again no matter how many times we
@@ -313,10 +315,12 @@ describe('SimpleEventPlugin', function() {
       expect(Scheduler).toFlushAndYield([]);
     });
 
-    // @gate experimental
-    it('end result of many interactive updates is deterministic', () => {
+    // NOTE: This test was written for the old behavior of discrete updates,
+    // where they would be async, but flushed early if another discrete update
+    // was dispatched.
+    it('end result of many interactive updates is deterministic', async () => {
       container = document.createElement('div');
-      const root = ReactDOM.unstable_createRoot(container);
+      const root = ReactDOMClient.createRoot(container);
       document.body.appendChild(container);
 
       let button;
@@ -356,129 +360,29 @@ describe('SimpleEventPlugin', function() {
       }
 
       // Click the button a single time
-      click();
-      // The counter should not have updated yet because it's async
-      expect(button.textContent).toEqual('Count: 0');
+      await act(async () => click());
+      // The counter should update synchronously, even in concurrent mode.
+      expect(button.textContent).toEqual('Count: 1');
 
       // Click the button many more times
-      click();
-      click();
-      click();
-      click();
-      click();
-      click();
+      await act(async () => click());
+      await act(async () => click());
+      await act(async () => click());
+      await act(async () => click());
+      await act(async () => click());
+      await act(async () => click());
 
       // Flush the remaining work
       Scheduler.unstable_flushAll();
       // The counter should equal the total number of clicks
       expect(button.textContent).toEqual('Count: 7');
     });
-
-    // @gate experimental
-    it('flushes discrete updates in order', () => {
-      container = document.createElement('div');
-      document.body.appendChild(container);
-
-      let button;
-      class Button extends React.Component {
-        state = {lowPriCount: 0};
-        render() {
-          const text = `High-pri count: ${this.props.highPriCount}, Low-pri count: ${this.state.lowPriCount}`;
-          Scheduler.unstable_yieldValue(text);
-          return (
-            <button
-              ref={el => (button = el)}
-              onClick={() => {
-                React.unstable_startTransition(() => {
-                  this.setState(state => ({
-                    lowPriCount: state.lowPriCount + 1,
-                  }));
-                });
-              }}>
-              {text}
-            </button>
-          );
-        }
-      }
-
-      class Wrapper extends React.Component {
-        state = {highPriCount: 0};
-        render() {
-          return (
-            <div
-              onClick={
-                // Intentionally not using the updater form here, to test
-                // that updates are serially processed.
-                () => {
-                  this.setState({highPriCount: this.state.highPriCount + 1});
-                }
-              }>
-              <Button highPriCount={this.state.highPriCount} />
-            </div>
-          );
-        }
-      }
-
-      // Initial mount
-      const root = ReactDOM.unstable_createRoot(container);
-      root.render(<Wrapper />);
-      expect(Scheduler).toFlushAndYield([
-        'High-pri count: 0, Low-pri count: 0',
-      ]);
-      expect(button.textContent).toEqual('High-pri count: 0, Low-pri count: 0');
-
-      function click() {
-        const event = new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-        });
-        Object.defineProperty(event, 'timeStamp', {
-          value: 0,
-        });
-        button.dispatchEvent(event);
-      }
-
-      // Click the button a single time
-      click();
-      // Nothing should flush on the first click.
-      expect(Scheduler).toHaveYielded([]);
-      // Click again. This will force the previous discrete update to flush. But
-      // only the high-pri count will increase.
-      click();
-      expect(Scheduler).toHaveYielded(['High-pri count: 1, Low-pri count: 0']);
-      expect(button.textContent).toEqual('High-pri count: 1, Low-pri count: 0');
-
-      // Click the button many more times
-      click();
-      click();
-      click();
-      click();
-      click();
-      click();
-
-      // Flush the remaining work.
-      expect(Scheduler).toHaveYielded([
-        'High-pri count: 2, Low-pri count: 0',
-        'High-pri count: 3, Low-pri count: 0',
-        'High-pri count: 4, Low-pri count: 0',
-        'High-pri count: 5, Low-pri count: 0',
-        'High-pri count: 6, Low-pri count: 0',
-        'High-pri count: 7, Low-pri count: 0',
-      ]);
-
-      // At the end, both counters should equal the total number of clicks
-      expect(Scheduler).toFlushAndYield([
-        'High-pri count: 8, Low-pri count: 0',
-        'High-pri count: 8, Low-pri count: 8',
-      ]);
-      expect(button.textContent).toEqual('High-pri count: 8, Low-pri count: 8');
-    });
   });
 
-  describe('iOS bubbling click fix', function() {
+  describe('iOS bubbling click fix', function () {
     // See http://www.quirksmode.org/blog/archives/2010/09/click_event_del.html
 
-    it('does not add a local click to interactive elements', function() {
+    it('does not add a local click to interactive elements', function () {
       container = document.createElement('div');
 
       ReactDOM.render(<button onClick={onClick} />, container);
@@ -490,7 +394,7 @@ describe('SimpleEventPlugin', function() {
       expect(onClick).toHaveBeenCalledTimes(0);
     });
 
-    it('adds a local click listener to non-interactive elements', function() {
+    it('adds a local click listener to non-interactive elements', function () {
       container = document.createElement('div');
 
       ReactDOM.render(<div onClick={onClick} />, container);
@@ -507,7 +411,7 @@ describe('SimpleEventPlugin', function() {
 
       const passiveEvents = [];
       const nativeAddEventListener = container.addEventListener;
-      container.addEventListener = function(type, fn, options) {
+      container.addEventListener = function (type, fn, options) {
         if (options !== null && typeof options === 'object') {
           if (options.passive) {
             passiveEvents.push(type);
@@ -516,36 +420,16 @@ describe('SimpleEventPlugin', function() {
         return nativeAddEventListener.apply(this, arguments);
       };
 
-      ReactDOM.render(
-        <div
-          // Affected by the intervention:
-          // https://github.com/facebook/react/issues/19651
-          onTouchStart={() => {}}
-          onTouchMove={() => {}}
-          onWheel={() => {}}
-          // A few events that should be unaffected:
-          onClick={() => {}}
-          onScroll={() => {}}
-          onTouchEnd={() => {}}
-          onChange={() => {}}
-          onPointerDown={() => {}}
-          onPointerMove={() => {}}
-        />,
-        container,
-      );
+      ReactDOM.render(<div />, container);
 
-      if (gate(flags => flags.enableEagerRootListeners)) {
-        expect(passiveEvents).toEqual([
-          'touchstart',
-          'touchstart',
-          'touchmove',
-          'touchmove',
-          'wheel',
-          'wheel',
-        ]);
-      } else {
-        expect(passiveEvents).toEqual(['touchstart', 'touchmove', 'wheel']);
-      }
+      expect(passiveEvents).toEqual([
+        'touchstart',
+        'touchstart',
+        'touchmove',
+        'touchmove',
+        'wheel',
+        'wheel',
+      ]);
     });
   });
 });

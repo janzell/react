@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -13,19 +13,25 @@ const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegratio
 
 let React;
 let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
 let ReactTestUtils;
 let act;
+let SuspenseList;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
 
   React = require('react');
   ReactDOM = require('react-dom');
+  ReactDOMClient = require('react-dom/client');
   ReactDOMServer = require('react-dom/server');
   ReactTestUtils = require('react-dom/test-utils');
-  act = ReactTestUtils.unstable_concurrentAct;
+  act = require('jest-react').act;
+  if (gate(flags => flags.enableSuspenseList)) {
+    SuspenseList = React.SuspenseList;
+  }
 
   // Make them available to the helpers.
   return {
@@ -35,11 +41,8 @@ function initModules() {
   };
 }
 
-const {
-  itThrowsWhenRendering,
-  resetModules,
-  serverRender,
-} = ReactDOMServerIntegrationUtils(initModules);
+const {itThrowsWhenRendering, resetModules, serverRender} =
+  ReactDOMServerIntegrationUtils(initModules);
 
 describe('ReactDOMServerSuspense', () => {
   beforeEach(() => {
@@ -54,7 +57,45 @@ describe('ReactDOMServerSuspense', () => {
     throw new Promise(() => {});
   }
 
-  // @gate experimental || www
+  function getVisibleChildren(element) {
+    const children = [];
+    let node = element.firstChild;
+    while (node) {
+      if (node.nodeType === 1) {
+        if (
+          node.tagName !== 'SCRIPT' &&
+          node.tagName !== 'TEMPLATE' &&
+          node.tagName !== 'template' &&
+          !node.hasAttribute('hidden') &&
+          !node.hasAttribute('aria-hidden')
+        ) {
+          const props = {};
+          const attributes = node.attributes;
+          for (let i = 0; i < attributes.length; i++) {
+            if (
+              attributes[i].name === 'id' &&
+              attributes[i].value.includes(':')
+            ) {
+              // We assume this is a React added ID that's a non-visual implementation detail.
+              continue;
+            }
+            props[attributes[i].name] = attributes[i].value;
+          }
+          props.children = getVisibleChildren(node);
+          children.push(React.createElement(node.tagName.toLowerCase(), props));
+        }
+      } else if (node.nodeType === 3) {
+        children.push(node.data);
+      }
+      node = node.nextSibling;
+    }
+    return children.length === 0
+      ? undefined
+      : children.length === 1
+      ? children[0]
+      : children;
+  }
+
   it('should render the children when no promise is thrown', async () => {
     const c = await serverRender(
       <div>
@@ -63,13 +104,9 @@ describe('ReactDOMServerSuspense', () => {
         </React.Suspense>
       </div>,
     );
-    const e = c.children[0];
-
-    expect(e.tagName).toBe('DIV');
-    expect(e.textContent).toBe('Children');
+    expect(getVisibleChildren(c)).toEqual(<div>Children</div>);
   });
 
-  // @gate experimental || www
   it('should render the fallback when a promise thrown', async () => {
     const c = await serverRender(
       <div>
@@ -78,13 +115,9 @@ describe('ReactDOMServerSuspense', () => {
         </React.Suspense>
       </div>,
     );
-    const e = c.children[0];
-
-    expect(e.tagName).toBe('DIV');
-    expect(e.textContent).toBe('Fallback');
+    expect(getVisibleChildren(c)).toEqual(<div>Fallback</div>);
   });
 
-  // @gate experimental || www
   it('should work with nested suspense components', async () => {
     const c = await serverRender(
       <div>
@@ -98,24 +131,26 @@ describe('ReactDOMServerSuspense', () => {
         </React.Suspense>
       </div>,
     );
-    const e = c.children[0];
 
-    expect(e.innerHTML).toBe(
-      '<div>Children</div><!--$!--><div>Fallback</div><!--/$-->',
+    expect(getVisibleChildren(c)).toEqual(
+      <div>
+        <div>Children</div>
+        <div>Fallback</div>
+      </div>,
     );
   });
 
-  // @gate experimental
+  // @gate enableSuspenseList
   it('server renders a SuspenseList component and its children', async () => {
     const example = (
-      <React.SuspenseList>
+      <SuspenseList>
         <React.Suspense fallback="Loading A">
           <div>A</div>
         </React.Suspense>
         <React.Suspense fallback="Loading B">
           <div>B</div>
         </React.Suspense>
-      </React.SuspenseList>
+      </SuspenseList>
     );
     const element = await serverRender(example);
     const parent = element.parentNode;
@@ -127,8 +162,7 @@ describe('ReactDOMServerSuspense', () => {
     expect(divB.textContent).toBe('B');
 
     act(() => {
-      const root = ReactDOM.createBlockingRoot(parent, {hydrate: true});
-      root.render(example);
+      ReactDOMClient.hydrateRoot(parent, example);
     });
 
     const parent2 = element.parentNode;
@@ -152,7 +186,7 @@ describe('ReactDOMServerSuspense', () => {
           1,
         );
       },
-      'Add a <Suspense fallback=...> component higher in the tree',
+      'A component suspended while responding to synchronous input.',
     );
 
     itThrowsWhenRendering(
@@ -165,7 +199,7 @@ describe('ReactDOMServerSuspense', () => {
           1,
         );
       },
-      'Add a <Suspense fallback=...> component higher in the tree',
+      'A component suspended while responding to synchronous input.',
     );
   }
 

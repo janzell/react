@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -87,9 +87,19 @@ describe('ReactTestRendererAsync', () => {
         </>
       );
     }
-    const renderer = ReactTestRenderer.create(<Parent step={1} />, {
-      unstable_isConcurrent: true,
-    });
+
+    let renderer;
+    if (gate(flags => flags.enableSyncDefaultUpdates)) {
+      React.startTransition(() => {
+        renderer = ReactTestRenderer.create(<Parent step={1} />, {
+          unstable_isConcurrent: true,
+        });
+      });
+    } else {
+      renderer = ReactTestRenderer.create(<Parent step={1} />, {
+        unstable_isConcurrent: true,
+      });
+    }
 
     // Flush the first two siblings
     expect(Scheduler).toFlushAndYieldThrough(['A:1', 'B:1']);
@@ -124,9 +134,18 @@ describe('ReactTestRendererAsync', () => {
       }
     }
 
-    const renderer = ReactTestRenderer.create(<Example step={1} />, {
-      unstable_isConcurrent: true,
-    });
+    let renderer;
+    if (gate(flags => flags.enableSyncDefaultUpdates)) {
+      React.startTransition(() => {
+        renderer = ReactTestRenderer.create(<Example step={1} />, {
+          unstable_isConcurrent: true,
+        });
+      });
+    } else {
+      renderer = ReactTestRenderer.create(<Example step={1} />, {
+        unstable_isConcurrent: true,
+      });
+    }
 
     // Flush the some of the changes, but don't commit
     expect(Scheduler).toFlushAndYieldThrough(['A:1']);

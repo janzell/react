@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -14,7 +14,7 @@ const ReactDOM = require('react-dom');
 const ReactTestUtils = require('react-dom/test-utils');
 
 // Helpers
-const testAllPermutations = function(testCases) {
+const testAllPermutations = function (testCases) {
   for (let i = 0; i < testCases.length; i += 2) {
     const renderWithChildren = testCases[i];
     const expectedResultAfterRender = testCases[i + 1];
@@ -33,7 +33,7 @@ const testAllPermutations = function(testCases) {
   }
 };
 
-const expectChildren = function(container, children) {
+const expectChildren = function (container, children) {
   const outerNode = container.firstChild;
   let textNode;
   if (typeof children === 'string') {
@@ -44,7 +44,7 @@ const expectChildren = function(container, children) {
     } else {
       expect(textNode != null).toBe(true);
       expect(textNode.nodeType).toBe(3);
-      expect(textNode.data).toBe('' + children);
+      expect(textNode.data).toBe(String(children));
     }
   } else {
     let mountIndex = 0;
@@ -53,9 +53,12 @@ const expectChildren = function(container, children) {
       const child = children[i];
 
       if (typeof child === 'string') {
+        if (child === '') {
+          continue;
+        }
         textNode = outerNode.childNodes[mountIndex];
         expect(textNode.nodeType).toBe(3);
-        expect(textNode.data).toBe('' + child);
+        expect(textNode.data).toBe(child);
         mountIndex++;
       } else {
         const elementDOMNode = outerNode.childNodes[mountIndex];
@@ -83,7 +86,7 @@ describe('ReactMultiChildText', () => {
         true, [],
         0, '0',
         1.2, '1.2',
-        '', '',
+        '', [],
         'foo', 'foo',
 
         [], [],
@@ -93,7 +96,7 @@ describe('ReactMultiChildText', () => {
         [true], [],
         [0], ['0'],
         [1.2], ['1.2'],
-        [''], [''],
+        [''], [],
         ['foo'], ['foo'],
         [<div />], [<div />],
 
@@ -168,7 +171,7 @@ describe('ReactMultiChildText', () => {
   });
 
   it('should throw if rendering both HTML and children', () => {
-    expect(function() {
+    expect(function () {
       ReactTestUtils.renderIntoDocument(
         <div dangerouslySetInnerHTML={{__html: 'abcdef'}}>ghjkl</div>,
       );
@@ -185,7 +188,7 @@ describe('ReactMultiChildText', () => {
       </div>,
     );
 
-    expect(function() {
+    expect(function () {
       ReactTestUtils.renderIntoDocument(
         <div>
           <h1>A</h1>
@@ -193,7 +196,7 @@ describe('ReactMultiChildText', () => {
       );
     }).not.toThrow();
 
-    expect(function() {
+    expect(function () {
       ReactTestUtils.renderIntoDocument(
         <div>
           <h1>{['A']}</h1>
@@ -201,7 +204,7 @@ describe('ReactMultiChildText', () => {
       );
     }).not.toThrow();
 
-    expect(function() {
+    expect(function () {
       ReactTestUtils.renderIntoDocument(
         <div>
           <h1>{['A', 'B']}</h1>

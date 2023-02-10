@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -8,10 +8,20 @@
  */
 
 import * as React from 'react';
-import {createContext, Component, Fragment, useContext} from 'react';
+import {createContext, Component, useContext, useState} from 'react';
 import PropTypes from 'prop-types';
 
+import type {ReactContext} from 'shared/ReactTypes';
+
 function someNamedFunction() {}
+
+function formatContextForDisplay(name: string, value: any | string) {
+  return (
+    <li>
+      {name}: <pre>{JSON.stringify(value, null, 2)}</pre>
+    </li>
+  );
+}
 
 const contextData = {
   array: ['first', 'second', 'third'],
@@ -26,7 +36,17 @@ const contextData = {
 };
 
 class LegacyContextProvider extends Component<any> {
-  static childContextTypes = {
+  static childContextTypes: {
+    array: any,
+    bool: any,
+    func: any,
+    null: any,
+    number: any,
+    object: any,
+    string: any,
+    symbol: any,
+    undefined: any,
+  } = {
     array: PropTypes.array,
     bool: PropTypes.bool,
     func: PropTypes.func,
@@ -38,17 +58,37 @@ class LegacyContextProvider extends Component<any> {
     undefined: PropTypes.any,
   };
 
-  getChildContext() {
+  getChildContext(): {
+    array: Array<string>,
+    bool: boolean,
+    func: () => void,
+    null: null,
+    number: number,
+    object: {outer: {inner: {...}}},
+    string: string,
+    symbol: symbol,
+    undefined: void,
+  } {
     return contextData;
   }
 
-  render() {
+  render(): any {
     return this.props.children;
   }
 }
 
 class LegacyContextConsumer extends Component<any> {
-  static contextTypes = {
+  static contextTypes: {
+    array: any,
+    bool: any,
+    func: any,
+    null: any,
+    number: any,
+    object: any,
+    string: any,
+    symbol: any,
+    undefined: any,
+  } = {
     array: PropTypes.array,
     bool: PropTypes.bool,
     func: PropTypes.func,
@@ -60,10 +100,49 @@ class LegacyContextConsumer extends Component<any> {
     undefined: PropTypes.any,
   };
 
-  render() {
-    return null;
+  render(): any {
+    return formatContextForDisplay('LegacyContextConsumer', this.context);
   }
 }
+
+class LegacyContextProviderWithUpdates extends Component<any> {
+  constructor(props: any) {
+    super(props);
+    this.state = {type: 'desktop'};
+  }
+
+  getChildContext(): {type: any} {
+    return {type: this.state.type};
+  }
+
+  // $FlowFixMe[missing-local-annot]
+  handleChange = event => {
+    this.setState({type: event.target.value});
+  };
+
+  render(): any {
+    return (
+      <>
+        <LegacyFunctionalContextConsumer />
+        <div>
+          <input value={this.state.type} onChange={this.handleChange} />
+        </div>
+      </>
+    );
+  }
+}
+
+LegacyContextProviderWithUpdates.childContextTypes = {
+  type: PropTypes.string,
+};
+
+// $FlowFixMe[missing-local-annot]
+function LegacyFunctionalContextConsumer(props: any, context) {
+  return formatContextForDisplay('LegacyFunctionContextConsumer', context.type);
+}
+LegacyFunctionalContextConsumer.contextTypes = {
+  type: PropTypes.string,
+};
 
 const ModernContext = createContext();
 ModernContext.displayName = 'ModernContext';
@@ -85,37 +164,176 @@ const UndefinedContext = createContext(undefined);
 UndefinedContext.displayName = 'UndefinedContext';
 
 class ModernContextType extends Component<any> {
-  static contextType = ModernContext;
+  static contextType: ReactContext<void> = ModernContext;
 
-  render() {
-    return null;
+  render(): any {
+    return formatContextForDisplay('ModernContextType', this.context);
   }
 }
 
 function FunctionalContextConsumer() {
-  useContext(StringContext);
-  return null;
+  const value = useContext(StringContext);
+  return formatContextForDisplay('FunctionalContextConsumer', value);
 }
 
-export default function Contexts() {
+const StringContextWithUpdates = createContext({
+  string: contextData.string,
+  setString: (string: string) => {},
+});
+const StringContextWithUpdates2 = createContext({
+  string2: contextData.string,
+  setString2: (string: string) => {},
+});
+
+function FunctionalContextProviderWithContextUpdates() {
+  const [string, setString] = useState(contextData.string);
+  const [string2, setString2] = useState(contextData.string);
+  const value = {string, setString};
+  const value2 = {string2, setString2};
+
   return (
-    <Fragment>
-      <LegacyContextProvider>
-        <LegacyContextConsumer />
-      </LegacyContextProvider>
-      <ModernContext.Provider value={contextData}>
-        <ModernContext.Consumer>{value => null}</ModernContext.Consumer>
-        <ModernContextType />
-      </ModernContext.Provider>
-      <FunctionalContextConsumer />
-      <ArrayContext.Consumer>{value => null}</ArrayContext.Consumer>
-      <BoolContext.Consumer>{value => null}</BoolContext.Consumer>
-      <FuncContext.Consumer>{value => null}</FuncContext.Consumer>
-      <NumberContext.Consumer>{value => null}</NumberContext.Consumer>
-      <StringContext.Consumer>{value => null}</StringContext.Consumer>
-      <SymbolContext.Consumer>{value => null}</SymbolContext.Consumer>
-      <NullContext.Consumer>{value => null}</NullContext.Consumer>
-      <UndefinedContext.Consumer>{value => null}</UndefinedContext.Consumer>
-    </Fragment>
+    <StringContextWithUpdates.Provider value={value}>
+      <StringContextWithUpdates2.Provider value={value2}>
+        <FunctionalContextConsumerWithContextUpdates />
+      </StringContextWithUpdates2.Provider>
+    </StringContextWithUpdates.Provider>
+  );
+}
+
+function FunctionalContextConsumerWithContextUpdates() {
+  const {string, setString} = useContext(StringContextWithUpdates);
+  const {string2, setString2} = useContext(StringContextWithUpdates2);
+  const [state, setState] = useState('state');
+
+  // $FlowFixMe[missing-local-annot]
+  const handleChange = e => setString(e.target.value);
+  // $FlowFixMe[missing-local-annot]
+  const handleChange2 = e => setString2(e.target.value);
+
+  return (
+    <>
+      {formatContextForDisplay(
+        'FunctionalContextConsumerWithUpdates',
+        `context: ${string}, context 2: ${string2}`,
+      )}
+      <div>
+        context: <input value={string} onChange={handleChange} />
+      </div>
+      <div>
+        context 2: <input value={string2} onChange={handleChange2} />
+      </div>
+      <div>
+        {state}
+        <div>
+          test state:{' '}
+          <input value={state} onChange={e => setState(e.target.value)} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+class ModernClassContextProviderWithUpdates extends Component<any> {
+  constructor(props: any) {
+    super(props);
+    this.setString = string => {
+      this.setState({string});
+    };
+
+    this.state = {
+      string: contextData.string,
+      setString: this.setString,
+    };
+  }
+
+  render(): any {
+    return (
+      <StringContextWithUpdates.Provider value={this.state}>
+        <ModernClassContextConsumerWithUpdates />
+      </StringContextWithUpdates.Provider>
+    );
+  }
+}
+
+class ModernClassContextConsumerWithUpdates extends Component<any> {
+  render(): any {
+    return (
+      <StringContextWithUpdates.Consumer>
+        {({string, setString}: {string: string, setString: string => void}) => (
+          <>
+            {formatContextForDisplay(
+              'ModernClassContextConsumerWithUpdates',
+              string,
+            )}
+            <input value={string} onChange={e => setString(e.target.value)} />
+          </>
+        )}
+      </StringContextWithUpdates.Consumer>
+    );
+  }
+}
+
+export default function Contexts(): React.Node {
+  return (
+    <div>
+      <h1>Contexts</h1>
+      <ul>
+        <LegacyContextProvider>
+          <LegacyContextConsumer />
+        </LegacyContextProvider>
+        <LegacyContextProviderWithUpdates />
+        <ModernContext.Provider value={contextData}>
+          <ModernContext.Consumer>
+            {(value: $FlowFixMe) =>
+              formatContextForDisplay('ModernContext.Consumer', value)
+            }
+          </ModernContext.Consumer>
+          <ModernContextType />
+        </ModernContext.Provider>
+        <FunctionalContextConsumer />
+        <FunctionalContextProviderWithContextUpdates />
+        <ModernClassContextProviderWithUpdates />
+        <ArrayContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('ArrayContext.Consumer', value)
+          }
+        </ArrayContext.Consumer>
+        <BoolContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('BoolContext.Consumer', value)
+          }
+        </BoolContext.Consumer>
+        <FuncContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('FuncContext.Consumer', value)
+          }
+        </FuncContext.Consumer>
+        <NumberContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('NumberContext.Consumer', value)
+          }
+        </NumberContext.Consumer>
+        <StringContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('StringContext.Consumer', value)
+          }
+        </StringContext.Consumer>
+        <SymbolContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('SymbolContext.Consumer', value)
+          }
+        </SymbolContext.Consumer>
+        <NullContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('NullContext.Consumer', value)
+          }
+        </NullContext.Consumer>
+        <UndefinedContext.Consumer>
+          {(value: $FlowFixMe) =>
+            formatContextForDisplay('UndefinedContext.Consumer', value)
+          }
+        </UndefinedContext.Consumer>
+      </ul>
+    </div>
   );
 }

@@ -1,8 +1,10 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
+ *
+ * @noflow
  */
 
 import {
@@ -29,7 +31,6 @@ import {
 import accumulateInto from './accumulateInto';
 import forEachAccumulated from './forEachAccumulated';
 import {HostComponent} from 'react-reconciler/src/ReactWorkTags';
-import invariant from 'shared/invariant';
 
 /**
  * Instance of element that should respond to touch/move types of interactions,
@@ -43,7 +44,7 @@ let responderInst = null;
  */
 let trackedTouchCount = 0;
 
-const changeResponder = function(nextResponderInst, blockHostResponder) {
+const changeResponder = function (nextResponderInst, blockHostResponder) {
   const oldResponderInst = responderInst;
   responderInst = nextResponderInst;
   if (ResponderEventPlugin.GlobalResponderHandler !== null) {
@@ -249,12 +250,13 @@ function getListener(inst, registrationName) {
     return null;
   }
   const listener = props[registrationName];
-  invariant(
-    !listener || typeof listener === 'function',
-    'Expected `%s` listener to be a function, instead got a value of `%s` type.',
-    registrationName,
-    typeof listener,
-  );
+
+  if (listener && typeof listener !== 'function') {
+    throw new Error(
+      `Expected \`${registrationName}\` listener to be a function, instead got a value of \`${typeof listener}\` type.`,
+    );
+  }
+
   return listener;
 }
 
@@ -681,7 +683,7 @@ function noResponderTouches(nativeEvent) {
 
 const ResponderEventPlugin = {
   /* For unit testing only */
-  _getResponder: function() {
+  _getResponder: function () {
     return responderInst;
   },
 
@@ -692,7 +694,7 @@ const ResponderEventPlugin = {
    * `touchEnd`. On certain platforms, this means that a native scroll has
    * assumed control and the original touch targets are destroyed.
    */
-  extractEvents: function(
+  extractEvents: function (
     topLevelType,
     targetInst,
     nativeEvent,

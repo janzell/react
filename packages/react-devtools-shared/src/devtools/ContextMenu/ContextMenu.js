@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -48,13 +48,14 @@ const HIDDEN_STATE = {
   pageY: 0,
 };
 
-type Props = {|
+type Props = {
   children: (data: Object) => React$Node,
   id: string,
-|};
+};
 
-export default function ContextMenu({children, id}: Props) {
-  const {registerMenu} = useContext<RegistryContextType>(RegistryContext);
+export default function ContextMenu({children, id}: Props): React.Node {
+  const {hideMenu, registerMenu} =
+    useContext<RegistryContextType>(RegistryContext);
 
   const [state, setState] = useState(HIDDEN_STATE);
 
@@ -66,20 +67,32 @@ export default function ContextMenu({children, id}: Props) {
     const element = bodyAccessorRef.current;
     if (element !== null) {
       const ownerDocument = element.ownerDocument;
-      containerRef.current = ownerDocument.createElement('div');
-      ownerDocument.body.appendChild(containerRef.current);
-      return () => {
-        ownerDocument.body.removeChild(containerRef.current);
-      };
+      containerRef.current = ownerDocument.querySelector(
+        '[data-react-devtools-portal-root]',
+      );
+
+      if (containerRef.current == null) {
+        console.warn(
+          'DevTools tooltip root node not found; context menus will be disabled.',
+        );
+      }
     }
   }, []);
 
   useEffect(() => {
-    const showMenu = ({data, pageX, pageY}) => {
+    const showMenuFn = ({
+      data,
+      pageX,
+      pageY,
+    }: {
+      data: any,
+      pageX: number,
+      pageY: number,
+    }) => {
       setState({data, isVisible: true, pageX, pageY});
     };
-    const hideMenu = () => setState(HIDDEN_STATE);
-    return registerMenu(id, showMenu, hideMenu);
+    const hideMenuFn = () => setState(HIDDEN_STATE);
+    return registerMenu(id, showMenuFn, hideMenuFn);
   }, [id]);
 
   useLayoutEffect(() => {
@@ -90,14 +103,11 @@ export default function ContextMenu({children, id}: Props) {
     const menu = ((menuRef.current: any): HTMLElement);
     const container = containerRef.current;
     if (container !== null) {
+      // $FlowFixMe[missing-local-annot]
       const hideUnlessContains = event => {
         if (!menu.contains(event.target)) {
-          setState(HIDDEN_STATE);
+          hideMenu();
         }
-      };
-
-      const hide = event => {
-        setState(HIDDEN_STATE);
       };
 
       const ownerDocument = container.ownerDocument;
@@ -106,7 +116,7 @@ export default function ContextMenu({children, id}: Props) {
       ownerDocument.addEventListener('keydown', hideUnlessContains);
 
       const ownerWindow = ownerDocument.defaultView;
-      ownerWindow.addEventListener('resize', hide);
+      ownerWindow.addEventListener('resize', hideMenu);
 
       repositionToFit(menu, state.pageX, state.pageY);
 
@@ -115,7 +125,7 @@ export default function ContextMenu({children, id}: Props) {
         ownerDocument.removeEventListener('touchstart', hideUnlessContains);
         ownerDocument.removeEventListener('keydown', hideUnlessContains);
 
-        ownerWindow.removeEventListener('resize', hide);
+        ownerWindow.removeEventListener('resize', hideMenu);
       };
     }
   }, [state]);

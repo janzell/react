@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -69,7 +69,7 @@ function isValidKey(nativeEvent: KeyboardEvent): boolean {
 
 function isTextInput(nativeEvent: KeyboardEvent): boolean {
   const {key, target} = nativeEvent;
-  if (key === 'Tab' || key === 'Esacpe') {
+  if (key === 'Tab' || key === 'Escape') {
     return false;
   }
   const {isContentEditable, tagName} = (target: any);
@@ -97,7 +97,7 @@ function handleGlobalFocusVisibleEvent(
 
 function handleFocusVisibleTargetEvents(
   event: SyntheticEvent<EventTarget>,
-  callback,
+  callback: boolean => void,
 ): void {
   if (event.type === 'keydown') {
     const {nativeEvent} = (event: any);
@@ -125,9 +125,10 @@ function isRelatedTargetWithin(
 }
 
 function setFocusVisibleListeners(
+  // $FlowFixMe[missing-local-annot]
   focusVisibleHandles,
   focusTarget: EventTarget,
-  callback,
+  callback: boolean => void,
 ) {
   focusVisibleHandles.forEach(focusVisibleHandle => {
     focusVisibleHandle.setListener(focusTarget, event =>
@@ -164,9 +165,10 @@ export function useFocus(
   }: UseFocusOptions,
 ): void {
   // Setup controlled state for this useFocus hook
-  const stateRef = useRef<null | {isFocused: boolean, isFocusVisible: boolean}>(
-    {isFocused: false, isFocusVisible: false},
-  );
+  const stateRef = useRef<null | {
+    isFocused: boolean,
+    isFocusVisible: boolean,
+  }>({isFocused: false, isFocusVisible: false});
   const focusHandle = useEvent('focusin');
   const blurHandle = useEvent('focusout');
   const focusVisibleHandles = useFocusVisibleInputHandles();
@@ -261,9 +263,10 @@ export function useFocusWithin<T>(
   }: UseFocusWithinOptions,
 ): (focusWithinTarget: null | T) => void {
   // Setup controlled state for this useFocus hook
-  const stateRef = useRef<null | {isFocused: boolean, isFocusVisible: boolean}>(
-    {isFocused: false, isFocusVisible: false},
-  );
+  const stateRef = useRef<null | {
+    isFocused: boolean,
+    isFocusVisible: boolean,
+  }>({isFocused: false, isFocusVisible: false});
   const focusHandle = useEvent('focusin');
   const blurHandle = useEvent('focusout');
   const afterBlurHandle = useEvent('afterblur');

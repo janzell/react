@@ -574,6 +574,24 @@ const attributes = [
     read: getSVGAttribute('externalResourcesRequired'),
   },
   {
+    name: 'fetchPriority',
+    overrideStringValue: 'high',
+    tagName: 'img',
+    read: getProperty('fetchPriority'),
+  },
+  {
+    name: 'fetchpriority',
+    overrideStringValue: 'high',
+    tagName: 'img',
+    read: getProperty('fetchPriority'),
+  },
+  {
+    name: 'fetchPriority',
+    overrideStringValue: 'high',
+    tagName: 'link',
+    read: getProperty('fetchPriority'),
+  },
+  {
     name: 'fill',
     containerTagName: 'svg',
     tagName: 'path',
@@ -937,6 +955,8 @@ const attributes = [
     tagName: 'svg',
     read: getSVGAttribute('image-rendering'),
   },
+  {name: 'imageSizes', tagName: 'link', read: getProperty('imageSizes')},
+  {name: 'imageSrcSet', tagName: 'link', read: getProperty('imageSrcset')},
   {
     name: 'in',
     read: getSVGAttribute('in'),
@@ -1960,6 +1980,16 @@ const attributes = [
     tagName: 'a',
     overrideStringValue:
       'translate(-10,-20) scale(2) rotate(45) translate(5,10)',
+  },
+  {
+    name: 'transform-origin',
+    tagName: 'svg',
+    read: getSVGAttribute('transform-origin'),
+  },
+  {
+    name: 'transformOrigin',
+    tagName: 'svg',
+    read: getSVGAttribute('transform-origin'),
   },
   {name: 'type', tagName: 'button', overrideStringValue: 'reset'},
   {

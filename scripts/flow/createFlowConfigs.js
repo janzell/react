@@ -1,10 +1,8 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
- *
- * @flow
  */
 
 'use strict';
@@ -46,6 +44,11 @@ function writeConfig(renderer, rendererInfo, isServerSupported) {
 
   const config = configTemplate
     .replace(
+      '%CI_MAX_WORKERS%\n',
+      // On CI, we seem to need to limit workers.
+      process.env.CI ? 'server.max_workers=4\n' : '',
+    )
+    .replace(
       '%REACT_RENDERER_FLOW_OPTIONS%',
       `
 module.name_mapper='ReactFiberHostConfig$$' -> 'forks/ReactFiberHostConfig.${renderer}'
@@ -53,6 +56,7 @@ module.name_mapper='ReactServerStreamConfig$$' -> 'forks/ReactServerStreamConfig
 module.name_mapper='ReactServerFormatConfig$$' -> 'forks/ReactServerFormatConfig.${serverRenderer}'
 module.name_mapper='ReactFlightServerConfig$$' -> 'forks/ReactFlightServerConfig.${serverRenderer}'
 module.name_mapper='ReactFlightClientHostConfig$$' -> 'forks/ReactFlightClientHostConfig.${serverRenderer}'
+module.name_mapper='react-devtools-feature-flags' -> 'react-devtools-shared/src/config/DevToolsFeatureFlags.default'
     `.trim(),
     )
     .replace('%REACT_RENDERER_FLOW_IGNORES%', ignoredPaths.join('\n'));

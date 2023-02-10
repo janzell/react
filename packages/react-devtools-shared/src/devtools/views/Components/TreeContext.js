@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -24,6 +24,8 @@
 // For this reason, changes to the tree context are processed in sequence: tree -> search -> owners
 // This enables each section to potentially override (or mask) previous values.
 
+import type {ReactContext} from 'shared/ReactTypes';
+
 import * as React from 'react';
 import {
   createContext,
@@ -34,19 +36,15 @@ import {
   useMemo,
   useReducer,
   useRef,
+  startTransition,
 } from 'react';
-import {
-  unstable_next as next,
-  unstable_runWithPriority as runWithPriority,
-  unstable_UserBlockingPriority as UserBlockingPriority,
-} from 'scheduler';
 import {createRegExp} from '../utils';
 import {BridgeContext, StoreContext} from '../context';
 import Store from '../../store';
 
 import type {Element} from './types';
 
-export type StateContext = {|
+export type StateContext = {
   // Tree
   numElements: number,
   ownerSubtreeLeafElementID: number | null,
@@ -64,64 +62,70 @@ export type StateContext = {|
 
   // Inspection element panel
   inspectedElementID: number | null,
-|};
+};
 
-type ACTION_GO_TO_NEXT_SEARCH_RESULT = {|
+type ACTION_GO_TO_NEXT_SEARCH_RESULT = {
   type: 'GO_TO_NEXT_SEARCH_RESULT',
-|};
-type ACTION_GO_TO_PREVIOUS_SEARCH_RESULT = {|
+};
+type ACTION_GO_TO_PREVIOUS_SEARCH_RESULT = {
   type: 'GO_TO_PREVIOUS_SEARCH_RESULT',
-|};
-type ACTION_HANDLE_STORE_MUTATION = {|
+};
+type ACTION_HANDLE_STORE_MUTATION = {
   type: 'HANDLE_STORE_MUTATION',
   payload: [Array<number>, Map<number, number>],
-|};
-type ACTION_RESET_OWNER_STACK = {|
+};
+type ACTION_RESET_OWNER_STACK = {
   type: 'RESET_OWNER_STACK',
-|};
-type ACTION_SELECT_CHILD_ELEMENT_IN_TREE = {|
+};
+type ACTION_SELECT_CHILD_ELEMENT_IN_TREE = {
   type: 'SELECT_CHILD_ELEMENT_IN_TREE',
-|};
-type ACTION_SELECT_ELEMENT_AT_INDEX = {|
+};
+type ACTION_SELECT_ELEMENT_AT_INDEX = {
   type: 'SELECT_ELEMENT_AT_INDEX',
   payload: number | null,
-|};
-type ACTION_SELECT_ELEMENT_BY_ID = {|
+};
+type ACTION_SELECT_ELEMENT_BY_ID = {
   type: 'SELECT_ELEMENT_BY_ID',
   payload: number | null,
-|};
-type ACTION_SELECT_NEXT_ELEMENT_IN_TREE = {|
+};
+type ACTION_SELECT_NEXT_ELEMENT_IN_TREE = {
   type: 'SELECT_NEXT_ELEMENT_IN_TREE',
-|};
-type ACTION_SELECT_NEXT_SIBLING_IN_TREE = {|
+};
+type ACTION_SELECT_NEXT_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE = {
+  type: 'SELECT_NEXT_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE',
+};
+type ACTION_SELECT_NEXT_SIBLING_IN_TREE = {
   type: 'SELECT_NEXT_SIBLING_IN_TREE',
-|};
-type ACTION_SELECT_OWNER = {|
+};
+type ACTION_SELECT_OWNER = {
   type: 'SELECT_OWNER',
   payload: number,
-|};
-type ACTION_SELECT_PARENT_ELEMENT_IN_TREE = {|
+};
+type ACTION_SELECT_PARENT_ELEMENT_IN_TREE = {
   type: 'SELECT_PARENT_ELEMENT_IN_TREE',
-|};
-type ACTION_SELECT_PREVIOUS_ELEMENT_IN_TREE = {|
+};
+type ACTION_SELECT_PREVIOUS_ELEMENT_IN_TREE = {
   type: 'SELECT_PREVIOUS_ELEMENT_IN_TREE',
-|};
-type ACTION_SELECT_PREVIOUS_SIBLING_IN_TREE = {|
+};
+type ACTION_SELECT_PREVIOUS_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE = {
+  type: 'SELECT_PREVIOUS_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE',
+};
+type ACTION_SELECT_PREVIOUS_SIBLING_IN_TREE = {
   type: 'SELECT_PREVIOUS_SIBLING_IN_TREE',
-|};
-type ACTION_SELECT_OWNER_LIST_NEXT_ELEMENT_IN_TREE = {|
+};
+type ACTION_SELECT_OWNER_LIST_NEXT_ELEMENT_IN_TREE = {
   type: 'SELECT_OWNER_LIST_NEXT_ELEMENT_IN_TREE',
-|};
-type ACTION_SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE = {|
+};
+type ACTION_SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE = {
   type: 'SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE',
-|};
-type ACTION_SET_SEARCH_TEXT = {|
+};
+type ACTION_SET_SEARCH_TEXT = {
   type: 'SET_SEARCH_TEXT',
   payload: string,
-|};
-type ACTION_UPDATE_INSPECTED_ELEMENT_ID = {|
+};
+type ACTION_UPDATE_INSPECTED_ELEMENT_ID = {
   type: 'UPDATE_INSPECTED_ELEMENT_ID',
-|};
+};
 
 type Action =
   | ACTION_GO_TO_NEXT_SEARCH_RESULT
@@ -132,10 +136,12 @@ type Action =
   | ACTION_SELECT_ELEMENT_AT_INDEX
   | ACTION_SELECT_ELEMENT_BY_ID
   | ACTION_SELECT_NEXT_ELEMENT_IN_TREE
+  | ACTION_SELECT_NEXT_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE
   | ACTION_SELECT_NEXT_SIBLING_IN_TREE
   | ACTION_SELECT_OWNER
   | ACTION_SELECT_PARENT_ELEMENT_IN_TREE
   | ACTION_SELECT_PREVIOUS_ELEMENT_IN_TREE
+  | ACTION_SELECT_PREVIOUS_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE
   | ACTION_SELECT_PREVIOUS_SIBLING_IN_TREE
   | ACTION_SELECT_OWNER_LIST_NEXT_ELEMENT_IN_TREE
   | ACTION_SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE
@@ -144,17 +150,15 @@ type Action =
 
 export type DispatcherContext = (action: Action) => void;
 
-const TreeStateContext = createContext<StateContext>(
-  ((null: any): StateContext),
-);
+const TreeStateContext: ReactContext<StateContext> =
+  createContext<StateContext>(((null: any): StateContext));
 TreeStateContext.displayName = 'TreeStateContext';
 
-const TreeDispatcherContext = createContext<DispatcherContext>(
-  ((null: any): DispatcherContext),
-);
+const TreeDispatcherContext: ReactContext<DispatcherContext> =
+  createContext<DispatcherContext>(((null: any): DispatcherContext));
 TreeDispatcherContext.displayName = 'TreeDispatcherContext';
 
-type State = {|
+type State = {
   // Tree
   numElements: number,
   ownerSubtreeLeafElementID: number | null,
@@ -172,7 +176,7 @@ type State = {|
 
   // Inspection element panel
   inspectedElementID: number | null,
-|};
+};
 
 function reduceTreeState(store: Store, state: State, action: Action): State {
   let {
@@ -288,7 +292,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
           ) {
             const leafElement = store.getElementByID(ownerSubtreeLeafElementID);
             if (leafElement !== null) {
-              let currentElement = leafElement;
+              let currentElement: null | Element = leafElement;
               while (currentElement !== null) {
                 if (currentElement.ownerID === selectedElementID) {
                   selectedElementIndex = store.getIndexOfElementID(
@@ -372,6 +376,83 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
           }
         }
         break;
+      case 'SELECT_PREVIOUS_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE': {
+        const elementIndicesWithErrorsOrWarnings =
+          store.getElementsWithErrorsAndWarnings();
+        if (elementIndicesWithErrorsOrWarnings.length === 0) {
+          return state;
+        }
+
+        let flatIndex = 0;
+        if (selectedElementIndex !== null) {
+          // Resume from the current position in the list.
+          // Otherwise step to the previous item, relative to the current selection.
+          for (
+            let i = elementIndicesWithErrorsOrWarnings.length - 1;
+            i >= 0;
+            i--
+          ) {
+            const {index} = elementIndicesWithErrorsOrWarnings[i];
+            if (index >= selectedElementIndex) {
+              flatIndex = i;
+            } else {
+              break;
+            }
+          }
+        }
+
+        let prevEntry;
+        if (flatIndex === 0) {
+          prevEntry =
+            elementIndicesWithErrorsOrWarnings[
+              elementIndicesWithErrorsOrWarnings.length - 1
+            ];
+          selectedElementID = prevEntry.id;
+          selectedElementIndex = prevEntry.index;
+        } else {
+          prevEntry = elementIndicesWithErrorsOrWarnings[flatIndex - 1];
+          selectedElementID = prevEntry.id;
+          selectedElementIndex = prevEntry.index;
+        }
+
+        lookupIDForIndex = false;
+        break;
+      }
+      case 'SELECT_NEXT_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE': {
+        const elementIndicesWithErrorsOrWarnings =
+          store.getElementsWithErrorsAndWarnings();
+        if (elementIndicesWithErrorsOrWarnings.length === 0) {
+          return state;
+        }
+
+        let flatIndex = -1;
+        if (selectedElementIndex !== null) {
+          // Resume from the current position in the list.
+          // Otherwise step to the next item, relative to the current selection.
+          for (let i = 0; i < elementIndicesWithErrorsOrWarnings.length; i++) {
+            const {index} = elementIndicesWithErrorsOrWarnings[i];
+            if (index <= selectedElementIndex) {
+              flatIndex = i;
+            } else {
+              break;
+            }
+          }
+        }
+
+        let nextEntry;
+        if (flatIndex >= elementIndicesWithErrorsOrWarnings.length - 1) {
+          nextEntry = elementIndicesWithErrorsOrWarnings[0];
+          selectedElementID = nextEntry.id;
+          selectedElementIndex = nextEntry.index;
+        } else {
+          nextEntry = elementIndicesWithErrorsOrWarnings[flatIndex + 1];
+          selectedElementID = nextEntry.id;
+          selectedElementIndex = nextEntry.index;
+        }
+
+        lookupIDForIndex = false;
+        break;
+      }
       default:
         // React can bailout of no-op updates.
         return state;
@@ -426,6 +507,7 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
         if (numPrevSearchResults > 0) {
           didRequestSearch = true;
           searchIndex =
+            // $FlowFixMe[unsafe-addition] addition with possible null/undefined value
             searchIndex + 1 < numPrevSearchResults ? searchIndex + 1 : 0;
         }
         break;
@@ -440,10 +522,8 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
         break;
       case 'HANDLE_STORE_MUTATION':
         if (searchText !== '') {
-          const [
-            addedElementIDs,
-            removedElementIDs,
-          ] = (action: ACTION_HANDLE_STORE_MUTATION).payload;
+          const [addedElementIDs, removedElementIDs] =
+            (action: ACTION_HANDLE_STORE_MUTATION).payload;
 
           removedElementIDs.forEach((parentID, id) => {
             // Prune this item from the search results.
@@ -738,7 +818,7 @@ function reduceSuspenseState(
   return state;
 }
 
-type Props = {|
+type Props = {
   children: React$Node,
 
   // Used for automated testing
@@ -746,16 +826,16 @@ type Props = {|
   defaultOwnerID?: ?number,
   defaultSelectedElementID?: ?number,
   defaultSelectedElementIndex?: ?number,
-|};
+};
 
-// TODO Remove TreeContextController wrapper element once global ConsearchText.write API exists.
+// TODO Remove TreeContextController wrapper element once global Context.write API exists.
 function TreeContextController({
   children,
   defaultInspectedElementID,
   defaultOwnerID,
   defaultSelectedElementID,
   defaultSelectedElementIndex,
-}: Props) {
+}: Props): React.Node {
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
 
@@ -765,49 +845,52 @@ function TreeContextController({
   // The store is mutable, but the Store itself is global and lives for the lifetime of the DevTools,
   // so it's okay for the reducer to have an empty dependencies array.
   const reducer = useMemo(
-    () => (state: State, action: Action): State => {
-      const {type} = action;
-      switch (type) {
-        case 'GO_TO_NEXT_SEARCH_RESULT':
-        case 'GO_TO_PREVIOUS_SEARCH_RESULT':
-        case 'HANDLE_STORE_MUTATION':
-        case 'RESET_OWNER_STACK':
-        case 'SELECT_ELEMENT_AT_INDEX':
-        case 'SELECT_ELEMENT_BY_ID':
-        case 'SELECT_CHILD_ELEMENT_IN_TREE':
-        case 'SELECT_NEXT_ELEMENT_IN_TREE':
-        case 'SELECT_NEXT_SIBLING_IN_TREE':
-        case 'SELECT_OWNER_LIST_NEXT_ELEMENT_IN_TREE':
-        case 'SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE':
-        case 'SELECT_PARENT_ELEMENT_IN_TREE':
-        case 'SELECT_PREVIOUS_ELEMENT_IN_TREE':
-        case 'SELECT_PREVIOUS_SIBLING_IN_TREE':
-        case 'SELECT_OWNER':
-        case 'UPDATE_INSPECTED_ELEMENT_ID':
-        case 'SET_SEARCH_TEXT':
-          state = reduceTreeState(store, state, action);
-          state = reduceSearchState(store, state, action);
-          state = reduceOwnersState(store, state, action);
-          state = reduceSuspenseState(store, state, action);
+    () =>
+      (state: State, action: Action): State => {
+        const {type} = action;
+        switch (type) {
+          case 'GO_TO_NEXT_SEARCH_RESULT':
+          case 'GO_TO_PREVIOUS_SEARCH_RESULT':
+          case 'HANDLE_STORE_MUTATION':
+          case 'RESET_OWNER_STACK':
+          case 'SELECT_ELEMENT_AT_INDEX':
+          case 'SELECT_ELEMENT_BY_ID':
+          case 'SELECT_CHILD_ELEMENT_IN_TREE':
+          case 'SELECT_NEXT_ELEMENT_IN_TREE':
+          case 'SELECT_NEXT_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE':
+          case 'SELECT_NEXT_SIBLING_IN_TREE':
+          case 'SELECT_OWNER_LIST_NEXT_ELEMENT_IN_TREE':
+          case 'SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE':
+          case 'SELECT_PARENT_ELEMENT_IN_TREE':
+          case 'SELECT_PREVIOUS_ELEMENT_IN_TREE':
+          case 'SELECT_PREVIOUS_ELEMENT_WITH_ERROR_OR_WARNING_IN_TREE':
+          case 'SELECT_PREVIOUS_SIBLING_IN_TREE':
+          case 'SELECT_OWNER':
+          case 'UPDATE_INSPECTED_ELEMENT_ID':
+          case 'SET_SEARCH_TEXT':
+            state = reduceTreeState(store, state, action);
+            state = reduceSearchState(store, state, action);
+            state = reduceOwnersState(store, state, action);
+            state = reduceSuspenseState(store, state, action);
 
-          // If the selected ID is in a collapsed subtree, reset the selected index to null.
-          // We'll know the correct index after the layout effect will toggle the tree,
-          // and the store tree is mutated to account for that.
-          if (
-            state.selectedElementID !== null &&
-            store.isInsideCollapsedSubTree(state.selectedElementID)
-          ) {
-            return {
-              ...state,
-              selectedElementIndex: null,
-            };
-          }
+            // If the selected ID is in a collapsed subtree, reset the selected index to null.
+            // We'll know the correct index after the layout effect will toggle the tree,
+            // and the store tree is mutated to account for that.
+            if (
+              state.selectedElementID !== null &&
+              store.isInsideCollapsedSubTree(state.selectedElementID)
+            ) {
+              return {
+                ...state,
+                selectedElementIndex: null,
+              };
+            }
 
-          return state;
-        default:
-          throw new Error(`Unrecognized action "${type}"`);
-      }
-    },
+            return state;
+          default:
+            throw new Error(`Unrecognized action "${type}"`);
+        }
+      },
     [store],
   );
 
@@ -836,11 +919,10 @@ function TreeContextController({
 
   const dispatchWrapper = useCallback(
     (action: Action) => {
-      // Run the first update at "user-blocking" priority in case dispatch is called from a non-React event.
-      // In this case, the current (and "next") priorities would both be "normal",
-      // and suspense would potentially block both updates.
-      runWithPriority(UserBlockingPriority, () => dispatch(action));
-      next(() => dispatch({type: 'UPDATE_INSPECTED_ELEMENT_ID'}));
+      dispatch(action);
+      startTransition(() => {
+        dispatch({type: 'UPDATE_INSPECTED_ELEMENT_ID'});
+      });
     },
     [dispatch],
   );

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -48,7 +48,7 @@ describe('unmocked scheduler', () => {
       TestAct(() => {
         TestRenderer.create(<Effecty />);
       });
-      expect(log).toEqual(['called']);
+      expect(log).toEqual([]);
     });
     expect(log).toEqual(['called']);
   });

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,15 +7,16 @@
  * @flow
  */
 
-const loggedTypeFailures = {};
+const loggedTypeFailures: {[string]: boolean} = {};
 
 import {describeUnknownElementTypeFrameInDEV} from 'shared/ReactComponentStackFrame';
 
 import ReactSharedInternals from 'shared/ReactSharedInternals';
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 const ReactDebugCurrentFrame = ReactSharedInternals.ReactDebugCurrentFrame;
 
-function setCurrentlyValidatingElement(element) {
+function setCurrentlyValidatingElement(element: any) {
   if (__DEV__) {
     if (element) {
       const owner = element._owner;
@@ -40,7 +41,7 @@ export default function checkPropTypes(
 ): void {
   if (__DEV__) {
     // $FlowFixMe This is okay but Flow doesn't know it.
-    const has = Function.call.bind(Object.prototype.hasOwnProperty);
+    const has = Function.call.bind(hasOwnProperty);
     for (const typeSpecName in typeSpecs) {
       if (has(typeSpecs, typeSpecName)) {
         let error;
@@ -51,6 +52,7 @@ export default function checkPropTypes(
           // This is intentionally an invariant that gets caught. It's the same
           // behavior as without this statement except with a better message.
           if (typeof typeSpecs[typeSpecName] !== 'function') {
+            // eslint-disable-next-line react-internal/prod-error-codes
             const err = Error(
               (componentName || 'React class') +
                 ': ' +

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@
  * @flow
  */
 
-import invariant from 'shared/invariant';
+import isArray from 'shared/isArray';
 
 /**
  * Accumulates items that must not be null or undefined.
@@ -20,10 +20,11 @@ function accumulate<T>(
   current: ?(T | Array<T>),
   next: T | Array<T>,
 ): T | Array<T> {
-  invariant(
-    next != null,
-    'accumulate(...): Accumulated items must not be null or undefined.',
-  );
+  if (next == null) {
+    throw new Error(
+      'accumulate(...): Accumulated items must not be null or undefined.',
+    );
+  }
 
   if (current == null) {
     return next;
@@ -31,11 +32,15 @@ function accumulate<T>(
 
   // Both are not empty. Warning: Never call x.concat(y) when you are not
   // certain that x is an Array (x could be a string with concat method).
-  if (Array.isArray(current)) {
+  if (isArray(current)) {
+    /* $FlowFixMe[incompatible-return] if `current` is `T` and `T` an array,
+     * `isArray` might refine to the array element type of `T` */
     return current.concat(next);
   }
 
-  if (Array.isArray(next)) {
+  if (isArray(next)) {
+    /* $FlowFixMe[incompatible-return] unsound if `next` is `T` and `T` an array,
+     * `isArray` might refine to the array element type of `T` */
     return [current].concat(next);
   }
 

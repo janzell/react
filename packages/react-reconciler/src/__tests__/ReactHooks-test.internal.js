@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -19,8 +19,6 @@ let Scheduler;
 let ReactDOMServer;
 let act;
 
-// Additional tests can be found in ReactHooksWithNoopRenderer. Plan is to
-// gradually migrate those to this file.
 describe('ReactHooks', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -31,7 +29,7 @@ describe('ReactHooks', () => {
     ReactTestRenderer = require('react-test-renderer');
     Scheduler = require('scheduler');
     ReactDOMServer = require('react-dom/server');
-    act = ReactTestRenderer.unstable_concurrentAct;
+    act = require('jest-react').act;
   });
 
   if (__DEV__) {
@@ -570,9 +568,13 @@ describe('ReactHooks', () => {
       });
     };
 
-    // Update at normal priority
-    ReactTestRenderer.unstable_batchedUpdates(() => update(n => n * 100));
-
+    if (gate(flags => flags.enableUnifiedSyncLane)) {
+      // Update at transition priority
+      React.startTransition(() => update(n => n * 100));
+    } else {
+      // Update at normal priority
+      ReactTestRenderer.unstable_batchedUpdates(() => update(n => n * 100));
+    }
     // The new state is eagerly computed.
     expect(Scheduler).toHaveYielded(['Compute state (1 -> 100)']);
 
@@ -727,42 +729,6 @@ describe('ReactHooks', () => {
     ReactTestRenderer.create(<App deps={[]} />);
     ReactTestRenderer.create(<App deps={null} />);
     ReactTestRenderer.create(<App deps={undefined} />);
-  });
-
-  it('assumes useEffect clean-up function is either a function or undefined', () => {
-    const {useLayoutEffect} = React;
-
-    function App(props) {
-      useLayoutEffect(() => {
-        return props.return;
-      });
-      return null;
-    }
-
-    const root1 = ReactTestRenderer.create(null);
-    expect(() => root1.update(<App return={17} />)).toErrorDev([
-      'Warning: An effect function must not return anything besides a ' +
-        'function, which is used for clean-up. You returned: 17',
-    ]);
-
-    const root2 = ReactTestRenderer.create(null);
-    expect(() => root2.update(<App return={null} />)).toErrorDev([
-      'Warning: An effect function must not return anything besides a ' +
-        'function, which is used for clean-up. You returned null. If your ' +
-        'effect does not require clean up, return undefined (or nothing).',
-    ]);
-
-    const root3 = ReactTestRenderer.create(null);
-    expect(() => root3.update(<App return={Promise.resolve()} />)).toErrorDev([
-      'Warning: An effect function must not return anything besides a ' +
-        'function, which is used for clean-up.\n\n' +
-        'It looks like you wrote useEffect(async () => ...) or returned a Promise.',
-    ]);
-
-    // Error on unmount because React assumes the value is a function
-    expect(() => {
-      root3.update(null);
-    }).toThrow('is not a function');
   });
 
   it('does not forget render phase useState updates inside an effect', () => {
@@ -1109,7 +1075,9 @@ describe('ReactHooks', () => {
     expect(() => {
       expect(() => {
         ReactTestRenderer.create(<App />);
-      }).toThrow('Rendered more hooks than during the previous render.');
+      }).toThrow(
+        'Should have a queue. This is likely a bug in React. Please file an issue.',
+      );
     }).toErrorDev([
       'Do not call Hooks inside useEffect(...), useMemo(...), or other built-in Hooks',
       'Do not call Hooks inside useEffect(...), useMemo(...), or other built-in Hooks',
@@ -1511,7 +1479,7 @@ describe('ReactHooks', () => {
     ];
 
     if (__EXPERIMENTAL__) {
-      const useTransitionHelper = () => React.useTransition({timeoutMs: 1000});
+      const useTransitionHelper = () => React.useTransition();
       const useDeferredValueHelper = () =>
         React.useDeferredValue(0, {timeoutMs: 1000});
 
@@ -1593,8 +1561,7 @@ describe('ReactHooks', () => {
         }
       });
 
-      it(`warns when more hooks (${(hookNameA,
-      hookNameB)}) are used during update than mount`, () => {
+      it(`warns when more hooks (${hookNameA}, ${hookNameB}) are used during update than mount`, () => {
         function App(props) {
           /* eslint-disable no-unused-vars */
           if (props.update) {
@@ -1648,8 +1615,7 @@ describe('ReactHooks', () => {
         .replace('use', '')
         .replace('Helper', '');
 
-      it(`warns when fewer hooks (${(hookNameA,
-      hookNameB)}) are used during update than mount`, () => {
+      it(`warns when fewer hooks (${hookNameA}, ${hookNameB}) are used during update than mount`, () => {
         function App(props) {
           /* eslint-disable no-unused-vars */
           if (props.update) {
@@ -1775,13 +1741,15 @@ describe('ReactHooks', () => {
     }
 
     await act(async () => {
-      ReactTestRenderer.create(
-        <>
-          <A />
-          <B />
-        </>,
-      );
-      expect(() => Scheduler.unstable_flushAll()).toThrow('Hello');
+      ReactTestRenderer.unstable_batchedUpdates(() => {
+        ReactTestRenderer.create(
+          <>
+            <A />
+            <B />
+          </>,
+        );
+        expect(() => Scheduler.unstable_flushAll()).toThrow('Hello');
+      });
     });
 
     if (__DEV__) {

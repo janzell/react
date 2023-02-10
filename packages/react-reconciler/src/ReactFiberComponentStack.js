@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -11,6 +11,8 @@ import type {Fiber} from './ReactInternalTypes';
 
 import {
   HostComponent,
+  HostHoistable,
+  HostSingleton,
   LazyComponent,
   SuspenseComponent,
   SuspenseListComponent,
@@ -18,7 +20,6 @@ import {
   IndeterminateComponent,
   ForwardRef,
   SimpleMemoComponent,
-  Block,
   ClassComponent,
 } from './ReactWorkTags';
 import {
@@ -35,6 +36,8 @@ function describeFiber(fiber: Fiber): string {
     : null;
   const source = __DEV__ ? fiber._debugSource : null;
   switch (fiber.tag) {
+    case HostHoistable:
+    case HostSingleton:
     case HostComponent:
       return describeBuiltInComponentFrame(fiber.type, source, owner);
     case LazyComponent:
@@ -49,8 +52,6 @@ function describeFiber(fiber: Fiber): string {
       return describeFunctionComponentFrame(fiber.type, source, owner);
     case ForwardRef:
       return describeFunctionComponentFrame(fiber.type.render, source, owner);
-    case Block:
-      return describeFunctionComponentFrame(fiber.type._render, source, owner);
     case ClassComponent:
       return describeClassComponentFrame(fiber.type, source, owner);
     default:
@@ -61,9 +62,10 @@ function describeFiber(fiber: Fiber): string {
 export function getStackByFiberInDevAndProd(workInProgress: Fiber): string {
   try {
     let info = '';
-    let node = workInProgress;
+    let node: Fiber = workInProgress;
     do {
       info += describeFiber(node);
+      // $FlowFixMe[incompatible-type] we bail out when we get a null
       node = node.return;
     } while (node);
     return info;

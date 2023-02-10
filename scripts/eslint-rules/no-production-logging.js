@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -12,8 +12,9 @@
 module.exports = {
   meta: {
     fixable: 'code',
+    schema: [],
   },
-  create: function(context) {
+  create: function (context) {
     function isInDEVBlock(node) {
       let done = false;
       while (!done) {
@@ -42,7 +43,7 @@ module.exports = {
         data: {
           identifier: node.property.name,
         },
-        fix: function(fixer) {
+        fix: function (fixer) {
           return [
             fixer.insertTextBefore(node.parent, `if (__DEV__) {`),
             fixer.insertTextAfter(node.parent, '}'),
@@ -59,7 +60,7 @@ module.exports = {
     }
 
     return {
-      MemberExpression: function(node) {
+      MemberExpression: function (node) {
         if (
           node.object.type === 'Identifier' &&
           node.object.name === 'console' &&

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -316,7 +316,8 @@ describe('ReactIncrementalTriangle', () => {
     reset();
 
     function assertConsistentTree(activeTriangleIndices = new Set(), counter) {
-      const children = ReactNoop.getChildren(rootID);
+      const childrenJSX = ReactNoop.getPendingChildrenAsJSX(rootID);
+      const children = childrenJSX === null ? [] : childrenJSX.props.children;
 
       if (children.length !== TOTAL_CHILDREN) {
         throw new Error('Wrong number of children.');
@@ -327,7 +328,7 @@ describe('ReactIncrementalTriangle', () => {
       for (let i = 0; i < children.length; i++) {
         const child = children[i];
 
-        const output = JSON.parse(child.prop);
+        const output = JSON.parse(child.props.prop);
         const prop = output.prop;
         const isActive = output.isActive;
         const counterContext = output.counterContext;
@@ -433,6 +434,7 @@ describe('ReactIncrementalTriangle', () => {
       }
       // Flush remaining work
       Scheduler.unstable_flushAllWithoutAsserting();
+      ReactNoop.flushSync();
       assertConsistentTree(activeLeafIndices, expectedCounterAtEnd);
     }
 
@@ -561,6 +563,12 @@ ${formatActions(actions)}
         ['c', step(1)],
         ['b', flush(7)],
         ['c', toggle(0)],
+      );
+
+      simulateMultipleRoots(
+        ['c', step(1)],
+        ['c', expire(5000)],
+        ['b', toggle(1)],
       );
     });
 

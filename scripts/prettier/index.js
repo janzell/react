@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -25,11 +25,19 @@ let didWarn = false;
 let didError = false;
 
 const files = glob
-  .sync('**/*.js', {ignore: '**/node_modules/**'})
+  .sync('**/*.js', {
+    ignore: [
+      '**/node_modules/**',
+      '**/cjs/**',
+      '**/__compiled__/**',
+      '**/__untransformed__/**',
+      'packages/react-devtools-extensions/src/ErrorTesterCompiled.js',
+    ],
+  })
   .filter(f => !onlyChanged || changedFiles.has(f));
 
 if (!files.length) {
-  return;
+  process.exit(0);
 }
 
 files.forEach(file => {

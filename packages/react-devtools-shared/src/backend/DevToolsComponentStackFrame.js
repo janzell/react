@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -12,13 +12,10 @@
 // while still maintaining support for multiple renderer versions
 // (which use different values for ReactTypeOfWork).
 
-import type {Source} from 'shared/ReactElementType';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {CurrentDispatcherRef} from './types';
 
 import {
-  BLOCK_NUMBER,
-  BLOCK_SYMBOL_STRING,
   FORWARD_REF_NUMBER,
   FORWARD_REF_SYMBOL_STRING,
   LAZY_NUMBER,
@@ -31,14 +28,13 @@ import {
   SUSPENSE_LIST_SYMBOL_STRING,
 } from './ReactSymbols';
 
-// These methods are safe to import from shared;
-// there is no React-specific logic here.
-import {disableLogs, reenableLogs} from 'shared/ConsolePatchingDev';
+// The shared console patching code is DEV-only.
+// We can't use it since DevTools only ships production builds.
+import {disableLogs, reenableLogs} from './DevToolsConsolePatching';
 
 let prefix;
 export function describeBuiltInComponentFrame(
   name: string,
-  source: void | null | Source,
   ownerFn: void | null | Function,
 ): string {
   if (prefix === undefined) {
@@ -58,7 +54,7 @@ let reentry = false;
 let componentFrameCache;
 if (__DEV__) {
   const PossiblyWeakMap = typeof WeakMap === 'function' ? WeakMap : Map;
-  componentFrameCache = new PossiblyWeakMap();
+  componentFrameCache = new PossiblyWeakMap<$FlowFixMe, string>();
 }
 
 export function describeNativeComponentFrame(
@@ -85,24 +81,26 @@ export function describeNativeComponentFrame(
   Error.prepareStackTrace = undefined;
 
   reentry = true;
-  let previousDispatcher;
-  if (__DEV__) {
-    previousDispatcher = currentDispatcherRef.current;
-    // Set the dispatcher in DEV because this might be call in the render function
-    // for warnings.
-    currentDispatcherRef.current = null;
-    disableLogs();
-  }
+
+  // Override the dispatcher so effects scheduled by this shallow render are thrown away.
+  //
+  // Note that unlike the code this was forked from (in ReactComponentStackFrame)
+  // DevTools should override the dispatcher even when DevTools is compiled in production mode,
+  // because the app itself may be in development mode and log errors/warnings.
+  const previousDispatcher = currentDispatcherRef.current;
+  currentDispatcherRef.current = null;
+  disableLogs();
+
   try {
     // This should throw.
     if (construct) {
       // Something should be setting the props in the constructor.
-      const Fake = function() {
+      const Fake = function () {
         throw Error();
       };
       // $FlowFixMe
       Object.defineProperty(Fake.prototype, 'props', {
-        set: function() {
+        set: function () {
           // We use a throwing setter instead of frozen or non-writable props
           // because that won't throw in a non-strict mode function.
           throw Error();
@@ -123,6 +121,7 @@ export function describeNativeComponentFrame(
         } catch (x) {
           control = x;
         }
+        // $FlowFixMe[prop-missing] found when upgrading Flow
         fn.call(Fake.prototype);
       }
     } else {
@@ -188,10 +187,8 @@ export function describeNativeComponentFrame(
 
     Error.prepareStackTrace = previousPrepareStackTrace;
 
-    if (__DEV__) {
-      currentDispatcherRef.current = previousDispatcher;
-      reenableLogs();
-    }
+    currentDispatcherRef.current = previousDispatcher;
+    reenableLogs();
   }
   // Fallback to just using the name if we couldn't make it throw.
   const name = fn ? fn.displayName || fn.name : '';
@@ -206,7 +203,6 @@ export function describeNativeComponentFrame(
 
 export function describeClassComponentFrame(
   ctor: Function,
-  source: void | null | Source,
   ownerFn: void | null | Function,
   currentDispatcherRef: CurrentDispatcherRef,
 ): string {
@@ -215,7 +211,6 @@ export function describeClassComponentFrame(
 
 export function describeFunctionComponentFrame(
   fn: Function,
-  source: void | null | Source,
   ownerFn: void | null | Function,
   currentDispatcherRef: CurrentDispatcherRef,
 ): string {
@@ -229,7 +224,6 @@ function shouldConstruct(Component: Function) {
 
 export function describeUnknownElementTypeFrameInDEV(
   type: any,
-  source: void | null | Source,
   ownerFn: void | null | Function,
   currentDispatcherRef: CurrentDispatcherRef,
 ): string {
@@ -247,15 +241,15 @@ export function describeUnknownElementTypeFrameInDEV(
     );
   }
   if (typeof type === 'string') {
-    return describeBuiltInComponentFrame(type, source, ownerFn);
+    return describeBuiltInComponentFrame(type, ownerFn);
   }
   switch (type) {
     case SUSPENSE_NUMBER:
     case SUSPENSE_SYMBOL_STRING:
-      return describeBuiltInComponentFrame('Suspense', source, ownerFn);
+      return describeBuiltInComponentFrame('Suspense', ownerFn);
     case SUSPENSE_LIST_NUMBER:
     case SUSPENSE_LIST_SYMBOL_STRING:
-      return describeBuiltInComponentFrame('SuspenseList', source, ownerFn);
+      return describeBuiltInComponentFrame('SuspenseList', ownerFn);
   }
   if (typeof type === 'object') {
     switch (type.$$typeof) {
@@ -263,7 +257,6 @@ export function describeUnknownElementTypeFrameInDEV(
       case FORWARD_REF_SYMBOL_STRING:
         return describeFunctionComponentFrame(
           type.render,
-          source,
           ownerFn,
           currentDispatcherRef,
         );
@@ -272,15 +265,6 @@ export function describeUnknownElementTypeFrameInDEV(
         // Memo may contain any component type so we recursively resolve it.
         return describeUnknownElementTypeFrameInDEV(
           type.type,
-          source,
-          ownerFn,
-          currentDispatcherRef,
-        );
-      case BLOCK_NUMBER:
-      case BLOCK_SYMBOL_STRING:
-        return describeFunctionComponentFrame(
-          type._render,
-          source,
           ownerFn,
           currentDispatcherRef,
         );
@@ -293,7 +277,6 @@ export function describeUnknownElementTypeFrameInDEV(
           // Lazy may contain any component type so we recursively resolve it.
           return describeUnknownElementTypeFrameInDEV(
             init(payload),
-            source,
             ownerFn,
             currentDispatcherRef,
           );

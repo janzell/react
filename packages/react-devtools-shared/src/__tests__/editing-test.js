@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -13,32 +13,36 @@ import type Store from 'react-devtools-shared/src/devtools/store';
 describe('editing interface', () => {
   let PropTypes;
   let React;
-  let ReactDOM;
   let bridge: FrontendBridge;
+  let legacyRender;
   let store: Store;
   let utils;
 
   const flushPendingUpdates = () => {
-    jest.runOnlyPendingTimers();
+    utils.act(() => jest.runOnlyPendingTimers());
   };
 
   beforeEach(() => {
     utils = require('./utils');
 
+    legacyRender = utils.legacyRender;
+
     bridge = global.bridge;
     store = global.store;
     store.collapseNodesByDefault = false;
+    store.componentFilters = [];
 
     PropTypes = require('prop-types');
     React = require('react');
-    ReactDOM = require('react-dom');
   });
 
   describe('props', () => {
     let committedClassProps;
     let committedFunctionProps;
+    let inputRef;
     let classID;
     let functionID;
+    let hostComponentID;
 
     async function mountTestApp() {
       class ClassComponent extends React.Component {
@@ -60,9 +64,11 @@ describe('editing interface', () => {
         return null;
       }
 
+      inputRef = React.createRef(null);
+
       const container = document.createElement('div');
       await utils.actAsync(() =>
-        ReactDOM.render(
+        legacyRender(
           <>
             <ClassComponent
               array={[1, 2, 3]}
@@ -76,6 +82,7 @@ describe('editing interface', () => {
               shallow="initial"
             />
             ,
+            <input ref={inputRef} onChange={jest.fn()} value="initial" />
           </>,
           container,
         ),
@@ -83,6 +90,7 @@ describe('editing interface', () => {
 
       classID = ((store.getElementIDAtIndex(0): any): number);
       functionID = ((store.getElementIDAtIndex(1): any): number);
+      hostComponentID = ((store.getElementIDAtIndex(2): any): number);
 
       expect(committedClassProps).toStrictEqual({
         array: [1, 2, 3],
@@ -98,8 +106,10 @@ describe('editing interface', () => {
         },
         shallow: 'initial',
       });
+      expect(inputRef.current.value).toBe('initial');
     }
 
+    // @reactVersion >= 16.9
     it('should have editable values', async () => {
       await mountTestApp();
 
@@ -166,6 +176,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     // Tests the combination of older frontend (DevTools UI) with newer backend (embedded within a renderer).
     it('should still support overriding prop values with legacy backend methods', async () => {
       await mountTestApp();
@@ -200,6 +211,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 17.0
     it('should have editable paths', async () => {
       await mountTestApp();
 
@@ -250,6 +262,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should enable adding new object properties and array values', async () => {
       await mountTestApp();
 
@@ -330,6 +343,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 17.0
     it('should have deletable keys', async () => {
       await mountTestApp();
 
@@ -380,6 +394,26 @@ describe('editing interface', () => {
         object: {},
       });
     });
+
+    // @reactVersion >= 16.9
+    it('should support editing host component values', async () => {
+      await mountTestApp();
+
+      function overrideProps(id, path, value) {
+        const rendererID = utils.getRendererID();
+        bridge.send('overrideValueAtPath', {
+          id,
+          path,
+          rendererID,
+          type: 'props',
+          value,
+        });
+        flushPendingUpdates();
+      }
+
+      overrideProps(hostComponentID, ['value'], 'updated');
+      expect(inputRef.current.value).toBe('updated');
+    });
   });
 
   describe('state', () => {
@@ -408,7 +442,7 @@ describe('editing interface', () => {
 
       const container = document.createElement('div');
       await utils.actAsync(() =>
-        ReactDOM.render(
+        legacyRender(
           <ClassComponent object={{nested: 'initial'}} shallow="initial" />,
           container,
         ),
@@ -425,6 +459,7 @@ describe('editing interface', () => {
       });
     }
 
+    // @reactVersion >= 16.9
     it('should have editable values', async () => {
       await mountTestApp();
 
@@ -462,6 +497,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     // Tests the combination of older frontend (DevTools UI) with newer backend (embedded within a renderer).
     it('should still support overriding state values with legacy backend methods', async () => {
       await mountTestApp();
@@ -485,6 +521,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should have editable paths', async () => {
       await mountTestApp();
 
@@ -519,6 +556,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should enable adding new object properties and array values', async () => {
       await mountTestApp();
 
@@ -567,6 +605,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should have deletable keys', async () => {
       await mountTestApp();
 
@@ -625,7 +664,7 @@ describe('editing interface', () => {
 
       const container = document.createElement('div');
       await utils.actAsync(() =>
-        ReactDOM.render(<FunctionComponent />, container),
+        legacyRender(<FunctionComponent />, container),
       );
 
       hookID = 0; // index
@@ -640,6 +679,7 @@ describe('editing interface', () => {
       });
     }
 
+    // @reactVersion >= 16.9
     it('should have editable values', async () => {
       await mountTestApp();
 
@@ -684,6 +724,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     // Tests the combination of older frontend (DevTools UI) with newer backend (embedded within a renderer).
     it('should still support overriding hook values with legacy backend methods', async () => {
       await mountTestApp();
@@ -710,6 +751,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 17.0
     it('should have editable paths', async () => {
       await mountTestApp();
 
@@ -745,6 +787,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should enable adding new object properties and array values', async () => {
       await mountTestApp();
 
@@ -794,6 +837,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 17.0
     it('should have deletable keys', async () => {
       await mountTestApp();
 
@@ -875,7 +919,7 @@ describe('editing interface', () => {
 
       const container = document.createElement('div');
       await utils.actAsync(() =>
-        ReactDOM.render(
+        legacyRender(
           <LegacyContextProvider>
             <ClassComponent />
           </LegacyContextProvider>,
@@ -897,6 +941,7 @@ describe('editing interface', () => {
       });
     }
 
+    // @reactVersion >= 16.9
     it('should have editable values', async () => {
       await mountTestApp();
 
@@ -945,6 +990,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     // Tests the combination of older frontend (DevTools UI) with newer backend (embedded within a renderer).
     it('should still support overriding context values with legacy backend methods', async () => {
       await mountTestApp();
@@ -975,6 +1021,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should have editable paths', async () => {
       await mountTestApp();
 
@@ -1015,6 +1062,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should enable adding new object properties and array values', async () => {
       await mountTestApp();
 
@@ -1068,6 +1116,7 @@ describe('editing interface', () => {
       });
     });
 
+    // @reactVersion >= 16.9
     it('should have deletable keys', async () => {
       await mountTestApp();
 

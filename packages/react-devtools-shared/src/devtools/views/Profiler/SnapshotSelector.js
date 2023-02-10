@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {Fragment, useCallback, useContext, useMemo} from 'react';
+import {Fragment, useContext, useMemo} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {ProfilerContext} from './ProfilerContext';
@@ -18,9 +18,9 @@ import {StoreContext} from '../context';
 
 import styles from './SnapshotSelector.css';
 
-export type Props = {||};
+export type Props = {};
 
-export default function SnapshotSelector(_: Props) {
+export default function SnapshotSelector(_: Props): React.Node {
   const {
     isCommitFilterEnabled,
     minCommitDuration,
@@ -32,16 +32,20 @@ export default function SnapshotSelector(_: Props) {
   const {profilerStore} = useContext(StoreContext);
   const {commitData} = profilerStore.getDataForRoot(((rootID: any): number));
 
-  const commitDurations: Array<number> = [];
+  const totalDurations: Array<number> = [];
   const commitTimes: Array<number> = [];
   commitData.forEach(commitDatum => {
-    commitDurations.push(commitDatum.duration);
+    totalDurations.push(
+      commitDatum.duration +
+        (commitDatum.effectDuration || 0) +
+        (commitDatum.passiveEffectDuration || 0),
+    );
     commitTimes.push(commitDatum.timestamp);
   });
 
   const filteredCommitIndices = useMemo(
     () =>
-      commitData.reduce((reduced, commitDatum, index) => {
+      commitData.reduce((reduced: $FlowFixMe, commitDatum, index) => {
         if (
           !isCommitFilterEnabled ||
           commitDatum.duration >= minCommitDuration
@@ -82,47 +86,97 @@ export default function SnapshotSelector(_: Props) {
 
   let label = null;
   if (numFilteredCommits > 0) {
-    label =
-      `${selectedFilteredCommitIndex + 1}`.padStart(
-        `${numFilteredCommits}`.length,
-        '0',
-      ) +
-      ' / ' +
-      numFilteredCommits;
-  }
+    // $FlowFixMe[missing-local-annot]
+    const handleCommitInputChange = event => {
+      const value = parseInt(event.currentTarget.value, 10);
+      if (!isNaN(value)) {
+        const filteredIndex = Math.min(
+          Math.max(value - 1, 0),
 
-  const viewNextCommit = useCallback(() => {
-    let nextCommitIndex = ((selectedFilteredCommitIndex: any): number) + 1;
-    if (nextCommitIndex === filteredCommitIndices.length) {
-      nextCommitIndex = 0;
-    }
-    selectCommitIndex(filteredCommitIndices[nextCommitIndex]);
-  }, [selectedFilteredCommitIndex, filteredCommitIndices, selectCommitIndex]);
-  const viewPrevCommit = useCallback(() => {
-    let nextCommitIndex = ((selectedFilteredCommitIndex: any): number) - 1;
-    if (nextCommitIndex < 0) {
-      nextCommitIndex = filteredCommitIndices.length - 1;
-    }
-    selectCommitIndex(filteredCommitIndices[nextCommitIndex]);
-  }, [selectedFilteredCommitIndex, filteredCommitIndices, selectCommitIndex]);
+          // Snashots are shown to the user as 1-based
+          // but the indices within the profiler data array ar 0-based.
+          numFilteredCommits - 1,
+        );
+        selectCommitIndex(filteredCommitIndices[filteredIndex]);
+      }
+    };
 
-  const handleKeyDown = useCallback(
-    event => {
+    // $FlowFixMe[missing-local-annot]
+    const handleClick = event => {
+      event.currentTarget.select();
+    };
+
+    // $FlowFixMe[missing-local-annot]
+    const handleKeyDown = event => {
       switch (event.key) {
-        case 'ArrowLeft':
+        case 'ArrowDown':
           viewPrevCommit();
           event.stopPropagation();
           break;
-        case 'ArrowRight':
+        case 'ArrowUp':
           viewNextCommit();
           event.stopPropagation();
           break;
         default:
           break;
       }
-    },
-    [viewNextCommit, viewPrevCommit],
-  );
+    };
+
+    const input = (
+      <input
+        className={styles.Input}
+        data-testname="SnapshotSelector-Input"
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={
+          // $FlowFixMe[unsafe-addition] addition with possible null/undefined value
+          selectedFilteredCommitIndex + 1
+        }
+        size={`${numFilteredCommits}`.length}
+        onChange={handleCommitInputChange}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+      />
+    );
+
+    label = (
+      <Fragment>
+        {input} / {numFilteredCommits}
+      </Fragment>
+    );
+  }
+
+  const viewNextCommit = () => {
+    let nextCommitIndex = ((selectedFilteredCommitIndex: any): number) + 1;
+    if (nextCommitIndex === filteredCommitIndices.length) {
+      nextCommitIndex = 0;
+    }
+    selectCommitIndex(filteredCommitIndices[nextCommitIndex]);
+  };
+  const viewPrevCommit = () => {
+    let nextCommitIndex = ((selectedFilteredCommitIndex: any): number) - 1;
+    if (nextCommitIndex < 0) {
+      nextCommitIndex = filteredCommitIndices.length - 1;
+    }
+    selectCommitIndex(filteredCommitIndices[nextCommitIndex]);
+  };
+
+  // $FlowFixMe[missing-local-annot]
+  const handleKeyDown = event => {
+    switch (event.key) {
+      case 'ArrowLeft':
+        viewPrevCommit();
+        event.stopPropagation();
+        break;
+      case 'ArrowRight':
+        viewNextCommit();
+        event.stopPropagation();
+        break;
+      default:
+        break;
+    }
+  };
 
   if (commitData.length === 0) {
     return null;
@@ -130,9 +184,14 @@ export default function SnapshotSelector(_: Props) {
 
   return (
     <Fragment>
-      <span className={styles.IndexLabel}>{label}</span>
+      <span
+        className={styles.IndexLabel}
+        data-testname="SnapshotSelector-Label">
+        {label}
+      </span>
       <Button
         className={styles.Button}
+        data-testname="SnapshotSelector-PreviousButton"
         disabled={numFilteredCommits === 0}
         onClick={viewPrevCommit}
         title="Select previous commit">
@@ -151,12 +210,13 @@ export default function SnapshotSelector(_: Props) {
         tabIndex={0}>
         {numFilteredCommits > 0 && (
           <SnapshotCommitList
-            commitDurations={commitDurations}
+            commitData={commitData}
             commitTimes={commitTimes}
             filteredCommitIndices={filteredCommitIndices}
             selectedCommitIndex={selectedCommitIndex}
             selectedFilteredCommitIndex={selectedFilteredCommitIndex}
             selectCommitIndex={selectCommitIndex}
+            totalDurations={totalDurations}
           />
         )}
         {numFilteredCommits === 0 && (
@@ -165,6 +225,7 @@ export default function SnapshotSelector(_: Props) {
       </div>
       <Button
         className={styles.Button}
+        data-testname="SnapshotSelector-NextButton"
         disabled={numFilteredCommits === 0}
         onClick={viewNextCommit}
         title="Select next commit">
