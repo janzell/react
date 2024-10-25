@@ -7,16 +7,15 @@
  * @flow
  */
 
-import type {ElementRef} from 'react';
 import type {
-  HostComponent,
+  HostInstance,
   MeasureInWindowOnSuccessCallback,
   MeasureLayoutOnSuccessCallback,
   MeasureOnSuccessCallback,
-  NativeMethods,
+  INativeMethods,
   ViewConfig,
 } from './ReactNativeTypes';
-import type {Instance} from './ReactNativeHostConfig';
+import type {Instance} from './ReactFiberConfigNative';
 
 // Modules provided by RN:
 import {
@@ -30,7 +29,7 @@ import {
   warnForStyleProps,
 } from './NativeMethodsMixinUtils';
 
-class ReactNativeFiberHostComponent {
+class ReactNativeFiberHostComponent implements INativeMethods {
   _children: Array<Instance | number>;
   _nativeTag: number;
   _internalFiberInstanceHandleDEV: Object;
@@ -72,7 +71,7 @@ class ReactNativeFiberHostComponent {
   }
 
   measureLayout(
-    relativeToNativeNode: number | ElementRef<HostComponent<mixed>>,
+    relativeToNativeNode: number | HostInstance,
     onSuccess: MeasureLayoutOnSuccessCallback,
     onFail?: () => void /* currently unused */,
   ) {
@@ -92,7 +91,7 @@ class ReactNativeFiberHostComponent {
     if (relativeNode == null) {
       if (__DEV__) {
         console.error(
-          'Warning: ref.measureLayout must be called with a node handle or a ref to a native component.',
+          'ref.measureLayout must be called with a node handle or a ref to a native component.',
         );
       }
 
@@ -126,9 +125,5 @@ class ReactNativeFiberHostComponent {
     }
   }
 }
-
-// $FlowFixMe[class-object-subtyping] found when upgrading Flow
-// $FlowFixMe[method-unbinding] found when upgrading Flow
-(ReactNativeFiberHostComponent.prototype: $ReadOnly<{...NativeMethods, ...}>);
 
 export default ReactNativeFiberHostComponent;

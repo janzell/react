@@ -7,14 +7,12 @@
  * @flow
  */
 
-import type {Instance} from 'react-reconciler/src/ReactFiberHostConfig';
 import type {FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   Family,
   RefreshUpdate,
   ScheduleRefresh,
   ScheduleRoot,
-  FindHostInstancesForRefresh,
   SetRefreshHandler,
 } from 'react-reconciler/src/ReactFiberHotReloading';
 import type {ReactNodeList} from 'shared/ReactTypes';
@@ -29,7 +27,6 @@ type Signature = {
 };
 
 type RendererHelpers = {
-  findHostInstancesForRefresh: FindHostInstancesForRefresh,
   scheduleRefresh: ScheduleRefresh,
   scheduleRoot: ScheduleRoot,
   setRefreshHandler: SetRefreshHandler,
@@ -414,34 +411,6 @@ export function getFamilyByType(type: any): Family | void {
   }
 }
 
-export function findAffectedHostInstances(
-  families: Array<Family>,
-): Set<Instance> {
-  if (__DEV__) {
-    const affectedInstances = new Set<Instance>();
-    mountedRoots.forEach(root => {
-      const helpers = helpersByRoot.get(root);
-      if (helpers === undefined) {
-        throw new Error(
-          'Could not find helpers for a root. This is a bug in React Refresh.',
-        );
-      }
-      const instancesForRoot = helpers.findHostInstancesForRefresh(
-        root,
-        families,
-      );
-      instancesForRoot.forEach(inst => {
-        affectedInstances.add(inst);
-      });
-    });
-    return affectedInstances;
-  } else {
-    throw new Error(
-      'Unexpected call to React Refresh in a production environment.',
-    );
-  }
-}
-
 export function injectIntoGlobalHook(globalObject: any): void {
   if (__DEV__) {
     // For React Native, the global hook will be set up by require('react-devtools-core').
@@ -642,8 +611,8 @@ export function createSignatureFunctionForTransform(): <T>(
   getCustomHooks?: () => Array<Function>,
 ) => T | void {
   if (__DEV__) {
-    let savedType;
-    let hasCustomHooks;
+    let savedType: mixed;
+    let hasCustomHooks: boolean;
     let didCollectHooks = false;
     return function <T>(
       type: T,
@@ -657,7 +626,6 @@ export function createSignatureFunctionForTransform(): <T>(
         // in HOC chains like _s(hoc1(_s(hoc2(_s(actualFunction))))).
         if (!savedType) {
           // We're in the innermost call, so this is the actual type.
-          // $FlowFixMe[escaped-generic] discovered when updating Flow
           savedType = type;
           hasCustomHooks = typeof getCustomHooks === 'function';
         }
