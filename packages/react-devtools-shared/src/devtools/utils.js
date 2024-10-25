@@ -9,7 +9,7 @@
 
 import JSON5 from 'json5';
 
-import type {Element} from './views/Components/types';
+import type {Element} from 'react-devtools-shared/src/frontend/types';
 import type {StateContext} from './views/Components/TreeContext';
 import type Store from './store';
 
@@ -155,7 +155,7 @@ export function sanitizeForParse(value: any): any | string {
       value.charAt(0) === "'" &&
       value.charAt(value.length - 1) === "'"
     ) {
-      return '"' + value.substr(1, value.length - 2) + '"';
+      return '"' + value.slice(1, value.length - 1) + '"';
     }
   }
   return value;

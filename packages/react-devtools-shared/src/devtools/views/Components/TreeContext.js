@@ -42,7 +42,7 @@ import {createRegExp} from '../utils';
 import {BridgeContext, StoreContext} from '../context';
 import Store from '../../store';
 
-import type {Element} from './types';
+import type {Element} from 'react-devtools-shared/src/frontend/types';
 
 export type StateContext = {
   // Tree
@@ -929,10 +929,10 @@ function TreeContextController({
 
   // Listen for host element selections.
   useEffect(() => {
-    const handleSelectFiber = (id: number) =>
+    const handleSelectElement = (id: number) =>
       dispatchWrapper({type: 'SELECT_ELEMENT_BY_ID', payload: id});
-    bridge.addListener('selectFiber', handleSelectFiber);
-    return () => bridge.removeListener('selectFiber', handleSelectFiber);
+    bridge.addListener('selectElement', handleSelectElement);
+    return () => bridge.removeListener('selectElement', handleSelectElement);
   }, [bridge, dispatchWrapper]);
 
   // If a newly-selected search result or inspection selection is inside of a collapsed subtree, auto expand it.
@@ -993,10 +993,13 @@ function recursivelySearchTree(
   regExp: RegExp,
   searchResults: Array<number>,
 ): void {
-  const {children, displayName, hocDisplayNames} = ((store.getElementByID(
-    elementID,
-  ): any): Element);
+  const element = store.getElementByID(elementID);
 
+  if (element == null) {
+    return;
+  }
+
+  const {children, displayName, hocDisplayNames, compiledWithForget} = element;
   if (displayName != null && regExp.test(displayName) === true) {
     searchResults.push(elementID);
   } else if (
@@ -1004,6 +1007,8 @@ function recursivelySearchTree(
     hocDisplayNames.length > 0 &&
     hocDisplayNames.some(name => regExp.test(name)) === true
   ) {
+    searchResults.push(elementID);
+  } else if (compiledWithForget && regExp.test('Forget')) {
     searchResults.push(elementID);
   }
 

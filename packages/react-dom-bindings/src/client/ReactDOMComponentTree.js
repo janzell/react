@@ -7,20 +7,21 @@
  * @flow
  */
 
-import type {HoistableRoot, RootResources} from './ReactDOMFloatClient';
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {ReactScopeInstance} from 'shared/ReactTypes';
 import type {
   ReactDOMEventHandle,
   ReactDOMEventHandleListener,
-} from '../shared/ReactDOMTypes';
+} from './ReactDOMEventHandleTypes';
 import type {
   Container,
   TextInstance,
   Instance,
   SuspenseInstance,
   Props,
-} from './ReactDOMHostConfig';
+  HoistableRoot,
+  RootResources,
+} from './ReactFiberConfigDOM';
 
 import {
   HostComponent,
@@ -31,13 +32,9 @@ import {
   SuspenseComponent,
 } from 'react-reconciler/src/ReactWorkTags';
 
-import {getParentSuspenseInstance} from './ReactDOMHostConfig';
+import {getParentSuspenseInstance} from './ReactFiberConfigDOM';
 
-import {
-  enableScopeAPI,
-  enableFloat,
-  enableHostSingletons,
-} from 'shared/ReactFeatureFlags';
+import {enableScopeAPI} from 'shared/ReactFeatureFlags';
 
 const randomKey = Math.random().toString(36).slice(2);
 const internalInstanceKey = '__reactFiber$' + randomKey;
@@ -47,7 +44,7 @@ const internalEventHandlersKey = '__reactEvents$' + randomKey;
 const internalEventHandlerListenersKey = '__reactListeners$' + randomKey;
 const internalEventHandlesSetKey = '__reactHandles$' + randomKey;
 const internalRootNodeResourcesKey = '__reactResources$' + randomKey;
-const internalResourceMarker = '__reactMarker$' + randomKey;
+const internalHoistableMarker = '__reactMarker$' + randomKey;
 
 export function detachDeletedInstance(node: Instance): void {
   // TODO: This function is only called on host components. I don't think all of
@@ -178,8 +175,8 @@ export function getInstanceFromNode(node: Node): Fiber | null {
       tag === HostComponent ||
       tag === HostText ||
       tag === SuspenseComponent ||
-      (enableFloat ? tag === HostHoistable : false) ||
-      (enableHostSingletons ? tag === HostSingleton : false) ||
+      tag === HostHoistable ||
+      tag === HostSingleton ||
       tag === HostRoot
     ) {
       return inst;
@@ -198,8 +195,8 @@ export function getNodeFromInstance(inst: Fiber): Instance | TextInstance {
   const tag = inst.tag;
   if (
     tag === HostComponent ||
-    (enableFloat ? tag === HostHoistable : false) ||
-    (enableHostSingletons ? tag === HostSingleton : false) ||
+    tag === HostHoistable ||
+    tag === HostSingleton ||
     tag === HostText
   ) {
     // In Fiber this, is just the state node right now. We assume it will be
@@ -288,10 +285,16 @@ export function getResourcesFromRoot(root: HoistableRoot): RootResources {
   return resources;
 }
 
-export function isMarkedResource(node: Node): boolean {
-  return !!(node: any)[internalResourceMarker];
+export function isMarkedHoistable(node: Node): boolean {
+  return !!(node: any)[internalHoistableMarker];
 }
 
-export function markNodeAsResource(node: Node) {
-  (node: any)[internalResourceMarker] = true;
+export function markNodeAsHoistable(node: Node) {
+  (node: any)[internalHoistableMarker] = true;
+}
+
+export function isOwnedInstance(node: Node): boolean {
+  return !!(
+    (node: any)[internalHoistableMarker] || (node: any)[internalInstanceKey]
+  );
 }

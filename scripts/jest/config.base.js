@@ -2,9 +2,6 @@
 
 module.exports = {
   globalSetup: require.resolve('./setupGlobal.js'),
-  haste: {
-    hasteImplModulePath: require.resolve('./noHaste.js'),
-  },
   modulePathIgnorePatterns: [
     '<rootDir>/scripts/rollup/shims/',
     '<rootDir>/scripts/bench/',
@@ -12,6 +9,7 @@ module.exports = {
   transform: {
     '.*': require.resolve('./preprocessor.js'),
   },
+  prettierPath: require.resolve('prettier-2'),
   setupFiles: [require.resolve('./setupEnvironment.js')],
   setupFilesAfterEnv: [require.resolve('./setupTests.js')],
   // Only include files directly in __tests__, not in nested folders.
@@ -26,9 +24,7 @@ module.exports = {
   },
   snapshotSerializers: [require.resolve('jest-snapshot-serializer-raw')],
 
-  testSequencer: require.resolve('./jestSequencer'),
-
   testEnvironment: 'jsdom',
 
-  testRunner: 'jasmine2',
+  testRunner: 'jest-circus/runner',
 };

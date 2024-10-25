@@ -8,7 +8,7 @@
  */
 
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
-import type {Instance} from './ReactFiberHostConfig';
+import type {Instance} from './ReactFiberConfig';
 
 import {
   HostComponent,
@@ -27,7 +27,7 @@ import {
   setFocusIfFocusable,
   setupIntersectionObserver,
   supportsTestSelectors,
-} from './ReactFiberHostConfig';
+} from './ReactFiberConfig';
 
 let COMPONENT_TYPE: symbol | number = 0b000;
 let HAS_PSEUDO_CLASS_TYPE: symbol | number = 0b001;
@@ -48,7 +48,7 @@ type Type = symbol | number;
 
 type ComponentSelector = {
   $$typeof: Type,
-  value: React$AbstractComponent<empty, mixed>,
+  value: React$ComponentType<empty>,
 };
 
 type HasPseudoClassSelector = {
@@ -79,7 +79,7 @@ type Selector =
   | TestNameSelector;
 
 export function createComponentSelector(
-  component: React$AbstractComponent<empty, mixed>,
+  component: React$ComponentType<empty>,
 ): ComponentSelector {
   return {
     $$typeof: COMPONENT_TYPE,
